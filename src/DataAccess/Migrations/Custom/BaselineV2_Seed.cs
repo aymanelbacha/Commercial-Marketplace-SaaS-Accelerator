@@ -42,8 +42,8 @@ VALUES
 ");
 
             migrationBuilder.Sql(@$"
-INSERT INTO ApplicationConfiguration
-	("Name","Value","Description")
+INSERT INTO ""ApplicationConfiguration""
+	(""Name"",""Value"",""Description"")
 VALUES
     ('SMTPFromEmail','','SMTP Email'),
 	('SMTPPassword','','SMTP Password'),
