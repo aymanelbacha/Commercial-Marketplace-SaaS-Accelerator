@@ -4,6 +4,7 @@ using Marketplace.SaaS.Accelerator.DataAccess.Context;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
@@ -20,9 +21,9 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
 #pragma warning disable 612, 618
             modelBuilder
                 .HasAnnotation("ProductVersion", "6.0.1")
-                .HasAnnotation("Relational:MaxIdentifierLength", 128);
+                .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
-            SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder, 1L, 1);
+            NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
             modelBuilder.Entity("Marketplace.SaaS.Accelerator.DataAccess.Entities.ApplicationConfiguration", b =>
                 {
@@ -31,18 +32,18 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .HasColumnType("int")
                         .HasColumnName("ID");
 
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"), 1L, 1);
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<string>("Description")
                         .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)");
+                        .HasColumnType("character varying(255)");
 
                     b.Property<string>("Name")
                         .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
+                        .HasColumnType("character varying(50)");
 
                     b.Property<string>("Value")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("text");
 
                     b.HasKey("Id");
 
@@ -55,10 +56,10 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int");
 
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"), 1L, 1);
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<DateTime?>("ActionTime")
-                        .HasColumnType("datetime");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<string>("LogDetail")
                         .HasMaxLength(4000)
@@ -74,21 +75,21 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                 {
                     b.Property<string>("ChangeLog")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("text");
 
                     b.Property<string>("CreateBy")
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("character varying(100)");
 
                     b.Property<DateTime>("CreateDate")
-                        .HasColumnType("datetime");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int")
                         .HasColumnName("ID");
 
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"), 1L, 1);
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<decimal>("VersionNumber")
                         .HasColumnType("decimal(6,2)");
@@ -103,7 +104,7 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .HasColumnType("int")
                         .HasColumnName("ID");
 
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"), 1L, 1);
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<string>("Bcc")
                         .HasMaxLength(1000)
@@ -123,10 +124,10 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .HasColumnType("varchar(1000)");
 
                     b.Property<DateTime?>("InsertDate")
-                        .HasColumnType("datetime");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
+                        .HasColumnType("boolean");
 
                     b.Property<string>("Status")
                         .HasMaxLength(1000)
@@ -158,10 +159,10 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int");
 
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("EventsId"), 1L, 1);
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("EventsId"));
 
                     b.Property<DateTime?>("CreateDate")
-                        .HasColumnType("datetime");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<string>("EventsName")
                         .HasMaxLength(225)
@@ -169,7 +170,7 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .HasColumnType("varchar(225)");
 
                     b.Property<bool?>("IsActive")
-                        .HasColumnType("bit");
+                        .HasColumnType("boolean");
 
                     b.HasKey("EventsId");
 
@@ -182,7 +183,7 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int");
 
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"), 1L, 1);
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<int>("RoleId")
                         .HasColumnType("int");
@@ -205,13 +206,13 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int");
 
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"), 1L, 1);
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<int>("CreatedBy")
                         .HasColumnType("int");
 
                     b.Property<DateTime?>("CreatedDate")
-                        .HasColumnType("datetime");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<string>("RequestJson")
                         .HasMaxLength(500)
@@ -237,7 +238,7 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .HasColumnType("int");
 
                     b.Property<DateTime?>("SubscriptionUsageDate")
-                        .HasColumnType("datetime");
+                        .HasColumnType("timestamp without time zone");
 
                     b.HasKey("Id");
 
@@ -252,10 +253,10 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int");
 
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"), 1L, 1);
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<DateTime?>("CreatedDate")
-                        .HasColumnType("datetime");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<string>("Description")
                         .HasMaxLength(250)
@@ -283,7 +284,7 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int");
 
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"), 1L, 1);
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<int?>("DimensionId")
                         .IsRequired()
@@ -294,7 +295,7 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .HasColumnType("int");
 
                     b.Property<DateTime?>("NextRunTime")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<int?>("PlanId")
                         .IsRequired()
@@ -302,16 +303,16 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
 
                     b.Property<double?>("Quantity")
                         .IsRequired()
-                        .HasColumnType("float");
+                        .HasColumnType("double precision");
 
                     b.Property<string>("SchedulerName")
                         .IsRequired()
                         .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
+                        .HasColumnType("character varying(50)");
 
                     b.Property<DateTime?>("StartDate")
                         .IsRequired()
-                        .HasColumnType("datetime2");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<int?>("SubscriptionId")
                         .IsRequired()
@@ -337,10 +338,10 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .HasColumnType("int")
                         .HasColumnName("ID");
 
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"), 1L, 1);
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<DateTime?>("CreateDate")
-                        .HasColumnType("datetime");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<string>("Description")
                         .HasMaxLength(225)
@@ -356,16 +357,16 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .HasColumnType("int");
 
                     b.Property<bool>("FromList")
-                        .HasColumnType("bit");
+                        .HasColumnType("boolean");
 
                     b.Property<bool?>("IsDelete")
-                        .HasColumnType("bit");
+                        .HasColumnType("boolean");
 
                     b.Property<bool?>("IsRequired")
-                        .HasColumnType("bit");
+                        .HasColumnType("boolean");
 
                     b.Property<bool>("Isactive")
-                        .HasColumnType("bit");
+                        .HasColumnType("boolean");
 
                     b.Property<int?>("Max")
                         .HasColumnType("int");
@@ -374,7 +375,7 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .HasColumnType("int");
 
                     b.Property<Guid>("OfferId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<string>("ParameterId")
                         .HasMaxLength(225)
@@ -407,13 +408,13 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int");
 
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"), 1L, 1);
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<DateTime?>("CreateDate")
-                        .HasColumnType("datetime");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<Guid>("OfferGuid")
-                        .HasColumnType("uniqueidentifier")
+                        .HasColumnType("uuid")
                         .HasColumnName("OfferGUId");
 
                     b.Property<string>("OfferId")
@@ -440,20 +441,20 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int");
 
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("PlanAttributeId"), 1L, 1);
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("PlanAttributeId"));
 
                     b.Property<DateTime?>("CreateDate")
-                        .HasColumnType("datetime");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<bool>("IsEnabled")
-                        .HasColumnType("bit");
+                        .HasColumnType("boolean");
 
                     b.Property<int>("OfferAttributeId")
                         .HasColumnType("int")
                         .HasColumnName("OfferAttributeID");
 
                     b.Property<Guid>("PlanId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<int?>("UserId")
                         .HasColumnType("int");
@@ -476,7 +477,7 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .HasColumnType("varchar(225)");
 
                     b.Property<bool>("IsEnabled")
-                        .HasColumnType("bit");
+                        .HasColumnType("boolean");
 
                     b.Property<int>("OfferAttributeId")
                         .HasColumnType("int");
@@ -485,7 +486,7 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .HasColumnType("int");
 
                     b.Property<Guid>("PlanId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Type")
                         .HasMaxLength(225)
@@ -504,13 +505,13 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int");
 
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"), 1L, 1);
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<bool?>("CopyToCustomer")
-                        .HasColumnType("bit");
+                        .HasColumnType("boolean");
 
                     b.Property<DateTime?>("CreateDate")
-                        .HasColumnType("datetime");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<int>("EventId")
                         .HasColumnType("int");
@@ -521,10 +522,10 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .HasColumnType("varchar(225)");
 
                     b.Property<bool>("Isactive")
-                        .HasColumnType("bit");
+                        .HasColumnType("boolean");
 
                     b.Property<Guid>("PlanId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<string>("SuccessStateEmails")
                         .HasMaxLength(225)
@@ -545,7 +546,7 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .HasColumnType("int");
 
                     b.Property<bool?>("CopyToCustomer")
-                        .HasColumnType("bit");
+                        .HasColumnType("boolean");
 
                     b.Property<int>("EventId")
                         .HasColumnType("int");
@@ -565,10 +566,10 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .HasColumnName("ID");
 
                     b.Property<bool>("Isactive")
-                        .HasColumnType("bit");
+                        .HasColumnType("boolean");
 
                     b.Property<Guid>("PlanId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<string>("SuccessStateEmails")
                         .IsUnicode(false)
@@ -586,7 +587,7 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int");
 
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"), 1L, 1);
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<string>("Description")
                         .HasMaxLength(500)
@@ -599,17 +600,17 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .HasColumnType("varchar(100)");
 
                     b.Property<bool?>("IsPerUser")
-                        .HasColumnType("bit");
+                        .HasColumnType("boolean");
 
                     b.Property<bool?>("IsmeteringSupported")
-                        .HasColumnType("bit");
+                        .HasColumnType("boolean");
 
                     b.Property<Guid>("OfferId")
-                        .HasColumnType("uniqueidentifier")
+                        .HasColumnType("uuid")
                         .HasColumnName("OfferID");
 
                     b.Property<Guid>("PlanGuid")
-                        .HasColumnType("uniqueidentifier")
+                        .HasColumnType("uuid")
                         .HasColumnName("PlanGUID");
 
                     b.Property<string>("PlanId")
@@ -628,7 +629,7 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int");
 
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"), 1L, 1);
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<string>("Name")
                         .HasMaxLength(50)
@@ -646,7 +647,7 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int");
 
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"), 1L, 1);
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<string>("Frequency")
                         .IsRequired()
@@ -662,7 +663,7 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
             modelBuilder.Entity("Marketplace.SaaS.Accelerator.DataAccess.Entities.SchedulerManagerView", b =>
                 {
                     b.Property<Guid>("AMPSubscriptionId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Dimension")
                         .IsUnicode(false)
@@ -676,26 +677,26 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .HasColumnType("int");
 
                     b.Property<DateTime?>("NextRunTime")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<string>("PlanId")
                         .IsUnicode(false)
                         .HasColumnType("varchar(max)");
 
                     b.Property<string>("PurchaserEmail")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("text");
 
                     b.Property<double>("Quantity")
-                        .HasColumnType("float");
+                        .HasColumnType("double precision");
 
                     b.Property<string>("SchedulerName")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("text");
 
                     b.Property<DateTime>("StartDate")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<string>("SubscriptionName")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("text");
 
                     b.ToView("SchedulerManagerView");
                 });
@@ -707,24 +708,24 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .HasColumnType("int")
                         .HasColumnName("ID");
 
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"), 1L, 1);
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<DateTime?>("CreateDate")
-                        .HasColumnType("datetime");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<Guid>("OfferId")
-                        .HasColumnType("uniqueidentifier")
+                        .HasColumnType("uuid")
                         .HasColumnName("OfferID");
 
                     b.Property<int>("PlanAttributeId")
                         .HasColumnType("int");
 
                     b.Property<Guid>("PlanId")
-                        .HasColumnType("uniqueidentifier")
+                        .HasColumnType("uuid")
                         .HasColumnName("PlanID");
 
                     b.Property<Guid>("SubscriptionId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<int?>("UserId")
                         .HasColumnType("int");
@@ -745,7 +746,7 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int");
 
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"), 1L, 1);
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<string>("Attribute")
                         .HasMaxLength(20)
@@ -756,7 +757,7 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .HasColumnType("int");
 
                     b.Property<DateTime?>("CreateDate")
-                        .HasColumnType("datetime");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<string>("NewValue")
                         .IsUnicode(false)
@@ -784,7 +785,7 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int");
 
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"), 1L, 1);
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<string>("Name")
                         .HasMaxLength(225)
@@ -804,7 +805,7 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .HasColumnType("int");
 
                     b.Property<DateTime?>("CreateDate")
-                        .HasColumnType("datetime");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<string>("DisplayName")
                         .IsRequired()
@@ -816,7 +817,7 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .HasColumnType("int");
 
                     b.Property<bool>("FromList")
-                        .HasColumnType("bit");
+                        .HasColumnType("boolean");
 
                     b.Property<string>("Htmltype")
                         .IsRequired()
@@ -829,10 +830,10 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .HasColumnType("int");
 
                     b.Property<bool>("IsEnabled")
-                        .HasColumnType("bit");
+                        .HasColumnType("boolean");
 
                     b.Property<bool?>("IsRequired")
-                        .HasColumnType("bit");
+                        .HasColumnType("boolean");
 
                     b.Property<int>("Max")
                         .HasColumnType("int");
@@ -845,16 +846,16 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .HasColumnName("OfferAttributeID");
 
                     b.Property<Guid>("OfferId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<int>("PlanAttributeId")
                         .HasColumnType("int");
 
                     b.Property<Guid>("PlanId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<Guid>("SubscriptionId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Type")
                         .IsRequired()
@@ -894,7 +895,7 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int");
 
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"), 1L, 1);
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<string>("AmpplanId")
                         .HasMaxLength(100)
@@ -908,7 +909,7 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
 
                     b.Property<Guid>("AmpsubscriptionId")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier")
+                        .HasColumnType("uuid")
                         .HasColumnName("AMPSubscriptionId")
                         .HasDefaultValueSql("(newid())");
 
@@ -916,13 +917,13 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .HasColumnType("int");
 
                     b.Property<DateTime?>("CreateDate")
-                        .HasColumnType("datetime");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<bool?>("IsActive")
-                        .HasColumnType("bit");
+                        .HasColumnType("boolean");
 
                     b.Property<DateTime?>("ModifyDate")
-                        .HasColumnType("datetime");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<string>("Name")
                         .HasMaxLength(100)
@@ -935,7 +936,7 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .HasColumnType("varchar(225)");
 
                     b.Property<Guid?>("PurchaserTenantId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<string>("SubscriptionStatus")
                         .HasMaxLength(50)
@@ -958,10 +959,10 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int");
 
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("UserId"), 1L, 1);
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("UserId"));
 
                     b.Property<DateTime?>("CreatedDate")
-                        .HasColumnType("datetime");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<string>("EmailAddress")
                         .HasMaxLength(100)
@@ -984,10 +985,10 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int");
 
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("ValueTypeId"), 1L, 1);
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("ValueTypeId"));
 
                     b.Property<DateTime?>("CreateDate")
-                        .HasColumnType("datetime");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<string>("Htmltype")
                         .HasMaxLength(225)
@@ -1013,17 +1014,17 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                         .HasColumnType("int")
                         .HasColumnName("ID");
 
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"), 1L, 1);
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<string>("Description")
                         .IsUnicode(false)
                         .HasColumnType("varchar(max)");
 
                     b.Property<DateTime?>("InsertDate")
-                        .HasColumnType("datetime");
+                        .HasColumnType("timestamp without time zone");
 
                     b.Property<Guid?>("SubscriptionId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<string>("SubscriptionStatus")
                         .HasMaxLength(225)
