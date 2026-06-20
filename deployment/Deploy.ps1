@@ -2,7 +2,7 @@
 # Licensed under the MIT License. See LICENSE file in the project root for license information.
 
 #
-# Powershell script to deploy the resources - Customer portal, Publisher portal and the Azure SQL Database
+# Powershell script to deploy the resources - Customer portal, Publisher portal and PostgreSQL on a private Linux VM
 #
 
 #.\Deploy.ps1 `
@@ -23,7 +23,7 @@ Param(
    [string][Parameter()]$ADMTApplicationIDPortal, #Multi-Tenant Active Directory Application ID for the Landing Portal
    [string][Parameter()]$IsAdminPortalMultiTenant, # If set to true, the Admin Portal will be configured as a multi-tenant application. This is by default set to false. 
    [string][Parameter()]$SQLDatabaseName, # Name of the database (Defaults to AMPSaaSDB)
-   [string][Parameter()]$SQLServerName, # Name of the database server (without database.windows.net)
+   [string][Parameter()]$SQLServerName, # Name of the private PostgreSQL Linux VM (legacy param name retained)
    [string][Parameter()]$LogoURLpng,  # URL for Publisher .png logo
    [string][Parameter()]$LogoURLico,  # URL for Publisher .ico logo
    [string][Parameter()]$KeyVault, # Name of KeyVault
@@ -131,7 +131,7 @@ if ($ResourceGroupForDeployment -eq "") {
     $ResourceGroupForDeployment = $WebAppNamePrefix 
 }
 if ($SQLServerName -eq "") {
-    $SQLServerName = $WebAppNamePrefix + "-sql"
+    $SQLServerName = $WebAppNamePrefix + "-pgvm"
 }
 if ($SQLDatabaseName -eq "") {
     $SQLDatabaseName = $WebAppNamePrefix +"AMPSaaSDB"
@@ -210,15 +210,15 @@ if(!$dotnetversion.StartsWith('8.')) {
 Write-Host "Starting SaaS Accelerator Deployment..."
 
 
-#region Check If SQL Server Exist
-$sql_exists = Get-AzureRmSqlServer -ServerName $SQLServerName -ResourceGroupName $ResourceGroupForDeployment -ErrorAction SilentlyContinue
-if ($sql_exists) 
+#region Check If PostgreSQL VM Exists
+$vm_exists = az vm show --name $SQLServerName --resource-group $ResourceGroupForDeployment 2>$null
+if ($vm_exists) 
 {
 	Write-Host ""
-	Write-Host "🛑 SQl Server name " -NoNewline -ForegroundColor Red
+	Write-Host "🛑 PostgreSQL VM name " -NoNewline -ForegroundColor Red
 	Write-Host "$SQLServerName"   -NoNewline -ForegroundColor Red -BackgroundColor Yellow
 	Write-Host " already exists." -ForegroundColor Red
-	Write-Host "Please delete existing instance or use new sql Instance name by using parameter" -NoNewline 
+	Write-Host "Please delete the existing VM or choose a new name with parameter" -NoNewline 
 	Write-Host " -SQLServerName"   -ForegroundColor Green
     exit 1
 }  
@@ -481,23 +481,22 @@ $WebAppNameService=$WebAppNamePrefix+"-asp"
 $WebAppNameAdmin=$WebAppNamePrefix+"-admin"
 $WebAppNamePortal=$WebAppNamePrefix+"-portal"
 $VnetName=$WebAppNamePrefix+"-vnet"
-$privateSqlEndpointName=$WebAppNamePrefix+"-db-pe"
 $privateKvEndpointName=$WebAppNamePrefix+"-kv-pe"
-$privateSqlDnsZoneName="privatelink.database.windows.net"
 $privateKvDnsZoneName="privatelink.vaultcore.windows.net"
-$privateSqlLink =$WebAppNamePrefix+"-db-link"
 $privateKvlink =$WebAppNamePrefix+"-kv-link"
 $WebSubnetName="web"
 $SqlSubnetName="sql"
 $KvSubnetName="kv"
 $DefaultSubnetName="default"
+$PostgresNsgName=$WebAppNamePrefix+"-pg-nsg"
+$PostgresAdminUser="saasadmin"
+$PostgresAdminPassword = -join ((48..57) + (65..90) + (97..122) | Get-Random -Count 32 | ForEach-Object {[char]$_})
+$VnetCidr="10.0.0.0/20"
+$WebSubnetCidr="10.0.1.0/24"
 
 #keep the space at the end of the string - bug in az cli running on windows powershell truncates last char https://github.com/Azure/azure-cli/issues/10066
 $ADApplicationSecretKeyVault="@Microsoft.KeyVault(VaultName=$KeyVault;SecretName=ADApplicationSecret) "
 $DefaultConnectionKeyVault="@Microsoft.KeyVault(VaultName=$KeyVault;SecretName=DefaultConnection) "
-$ServerUri = $SQLServerName+".database.windows.net"
-$ServerUriPrivate = $SQLServerName+".privatelink.database.windows.net"
-$Connection="Server=tcp:"+$ServerUriPrivate+";Database="+$SQLDatabaseName+";TrustServerCertificate=True;Authentication=Active Directory Managed Identity;"
 
 Write-host "   🔵 Resource Group"
 Write-host "      ➡️ Create Resource Group"
@@ -506,26 +505,46 @@ az group create --location $Location --name $ResourceGroupForDeployment --output
 Write-host "      ➡️ Create VNET and Subnet"
 az network vnet create --resource-group $ResourceGroupForDeployment --name $VnetName --address-prefixes "10.0.0.0/20" --output $azCliOutput
 az network vnet subnet create --resource-group $ResourceGroupForDeployment --vnet-name $VnetName -n $DefaultSubnetName --address-prefixes "10.0.0.0/24" --output $azCliOutput
-az network vnet subnet create --resource-group $ResourceGroupForDeployment --vnet-name $VnetName -n $WebSubnetName --address-prefixes "10.0.1.0/24" --service-endpoints Microsoft.Sql Microsoft.KeyVault --delegations Microsoft.Web/serverfarms  --output $azCliOutput 
+az network vnet subnet create --resource-group $ResourceGroupForDeployment --vnet-name $VnetName -n $WebSubnetName --address-prefixes $WebSubnetCidr --service-endpoints Microsoft.KeyVault --delegations Microsoft.Web/serverfarms  --output $azCliOutput 
 az network vnet subnet create --resource-group $ResourceGroupForDeployment --vnet-name $VnetName -n $SqlSubnetName --address-prefixes "10.0.2.0/24"  --output $azCliOutput 
 az network vnet subnet create --resource-group $ResourceGroupForDeployment --vnet-name $VnetName -n $KvSubnetName --address-prefixes "10.0.3.0/24"   --output $azCliOutput 
 
-Write-host "      ➡️ Create Sql Server"
-$userId = az ad signed-in-user show --query id -o tsv 
-$userdisplayname = az ad signed-in-user show --query displayName -o tsv 
-az sql server create --name $SQLServerName --resource-group $ResourceGroupForDeployment --location $Location  --enable-ad-only-auth --external-admin-principal-type User --external-admin-name $userdisplayname --external-admin-sid $userId --output $azCliOutput
-Write-host "      ➡️ Set minimalTlsVersion to 1.2"
-az sql server update --name $SQLServerName --resource-group $ResourceGroupForDeployment --set minimalTlsVersion="1.2"
-Write-host "      ➡️ Add SQL Server Firewall rules"
-az sql server firewall-rule create --resource-group $ResourceGroupForDeployment --server $SQLServerName -n AllowAzureIP --start-ip-address "0.0.0.0" --end-ip-address "0.0.0.0" --output $azCliOutput
-if ($env:ACC_CLOUD -eq $null){
-    Write-host "      ➡️ Running in local environment - Add current IP to firewall"
-	$publicIp = (Invoke-WebRequest -uri "https://api.ipify.org").Content
-    az sql server firewall-rule create --resource-group $ResourceGroupForDeployment --server $SQLServerName -n AllowIP --start-ip-address "$publicIp" --end-ip-address "$publicIp" --output $azCliOutput
-}
+Write-host "      ➡️ Create PostgreSQL VM network security group (private-only)"
+az network nsg create --resource-group $ResourceGroupForDeployment --name $PostgresNsgName --location $Location --output $azCliOutput
+az network nsg rule create --resource-group $ResourceGroupForDeployment --nsg-name $PostgresNsgName -n AllowPostgresFromWeb --priority 100 --direction Inbound --access Allow --protocol Tcp --source-address-prefixes $WebSubnetCidr --source-port-ranges "*" --destination-address-prefixes "*" --destination-port-ranges 5432 --output $azCliOutput
+az network vnet subnet update --resource-group $ResourceGroupForDeployment --vnet-name $VnetName --name $SqlSubnetName --network-security-group $PostgresNsgName --output $azCliOutput
 
-Write-host "      ➡️ Create SQL DB"
-az sql db create --resource-group $ResourceGroupForDeployment --server $SQLServerName --name $SQLDatabaseName  --edition Standard  --capacity 10 --zone-redundant false --output $azCliOutput
+Write-host "      ➡️ Create private PostgreSQL 16 Linux VM in sql subnet"
+$cloudInitTemplate = Get-Content -Path "$PSScriptRoot/postgres/cloud-init.yaml" -Raw
+$cloudInit = $cloudInitTemplate.Replace("__DB_NAME__", $SQLDatabaseName).Replace("__DB_USER__", $PostgresAdminUser).Replace("__DB_PASSWORD__", $PostgresAdminPassword).Replace("__VNET_CIDR__", $VnetCidr)
+$cloudInitPath = Join-Path $env:TEMP "$SQLServerName-cloud-init.yaml"
+Set-Content -Path $cloudInitPath -Value $cloudInit -Encoding UTF8
+az vm create `
+    --resource-group $ResourceGroupForDeployment `
+    --name $SQLServerName `
+    --location $Location `
+    --image Ubuntu2204 `
+    --size Standard_B2s `
+    --admin-username azureuser `
+    --generate-ssh-keys `
+    --public-ip-address "" `
+    --vnet-name $VnetName `
+    --subnet $SqlSubnetName `
+    --nsg $PostgresNsgName `
+    --custom-data $cloudInitPath `
+    --output $azCliOutput
+Remove-Item -Path $cloudInitPath -Force -ErrorAction SilentlyContinue
+
+Write-host "      ➡️ Wait for PostgreSQL bootstrap on VM"
+Start-Sleep -Seconds 120
+
+$PostgresPrivateIp = az vm list-ip-addresses --resource-group $ResourceGroupForDeployment --name $SQLServerName --query "[0].virtualMachine.network.privateIpAddresses[0]" -o tsv
+if ([string]::IsNullOrWhiteSpace($PostgresPrivateIp)) {
+    throw "Could not resolve private IP for PostgreSQL VM '$SQLServerName'."
+}
+Write-host "      ➡️ PostgreSQL private endpoint: $PostgresPrivateIp:5432"
+
+$Connection="Host=$PostgresPrivateIp;Port=5432;Database=$SQLDatabaseName;Username=$PostgresAdminUser;Password=$PostgresAdminPassword;SSL Mode=Prefer;Trust Server Certificate=true"
 
 Write-host "   🔵 KeyVault"
 Write-host "      ➡️ Create KeyVault"
@@ -533,6 +552,7 @@ az keyvault create --name $KeyVault --resource-group $ResourceGroupForDeployment
 Write-host "      ➡️ Add Secrets"
 az keyvault secret set --vault-name $KeyVault --name ADApplicationSecret --value="$ADApplicationSecret" --output $azCliOutput
 az keyvault secret set --vault-name $KeyVault --name DefaultConnection --value $Connection --output $azCliOutput
+az keyvault secret set --vault-name $KeyVault --name PostgresAdminPassword --value $PostgresAdminPassword --output $azCliOutput
 Write-host "      ➡️ Update Firewall"
 az keyvault update --name $KeyVault --resource-group $ResourceGroupForDeployment --default-action Deny --output $azCliOutput
 az keyvault network-rule add --name $KeyVault --resource-group $ResourceGroupForDeployment --vnet-name $VnetName --subnet $WebSubnetName --output $azCliOutput
@@ -549,7 +569,7 @@ $WebAppNameAdminId = az webapp identity assign -g $ResourceGroupForDeployment  -
 Write-host "      ➡️ Setup access to KeyVault"
 az keyvault set-policy --name $KeyVault  --object-id $WebAppNameAdminId --secret-permissions get list --key-permissions get list --resource-group $ResourceGroupForDeployment --output $azCliOutput
 Write-host "      ➡️ Set Configuration"
-az webapp config connection-string set -g $ResourceGroupForDeployment -n $WebAppNameAdmin -t SQLAzure --output $azCliOutput --settings DefaultConnection=$DefaultConnectionKeyVault 
+az webapp config connection-string set -g $ResourceGroupForDeployment -n $WebAppNameAdmin -t PostgreSQL --output $azCliOutput --settings DefaultConnection=$DefaultConnectionKeyVault 
 az webapp config appsettings set -g $ResourceGroupForDeployment  -n $WebAppNameAdmin --output $azCliOutput --settings KnownUsers=$PublisherAdminUsers SaaSApiConfiguration__AdAuthenticationEndPoint=https://login.microsoftonline.com SaaSApiConfiguration__ClientId=$ADApplicationID SaaSApiConfiguration__ClientSecret=$ADApplicationSecretKeyVault SaaSApiConfiguration__FulFillmentAPIBaseURL=https://marketplaceapi.microsoft.com/api SaaSApiConfiguration__FulFillmentAPIVersion=2018-08-31 SaaSApiConfiguration__GrantType=client_credentials SaaSApiConfiguration__MTClientId=$ADApplicationIDAdmin SaaSApiConfiguration__IsAdminPortalMultiTenant=$IsAdminPortalMultiTenant SaaSApiConfiguration__Resource=20e940b3-4c77-4b0b-9a53-9e16a1b010a7 SaaSApiConfiguration__TenantId=$TenantID SaaSApiConfiguration__SignedOutRedirectUri=https://$WebAppNamePrefix-admin.azurewebsites.net/Home/Index/ SaaSApiConfiguration_CodeHash=$SaaSApiConfiguration_CodeHash
 az webapp config set -g $ResourceGroupForDeployment -n $WebAppNameAdmin --always-on true  --output $azCliOutput
 
@@ -561,7 +581,7 @@ $WebAppNamePortalId= az webapp identity assign -g $ResourceGroupForDeployment  -
 Write-host "      ➡️ Setup access to KeyVault"
 az keyvault set-policy --name $KeyVault  --object-id $WebAppNamePortalId --secret-permissions get list --key-permissions get list --resource-group $ResourceGroupForDeployment --output $azCliOutput
 Write-host "      ➡️ Set Configuration"
-az webapp config connection-string set -g $ResourceGroupForDeployment -n $WebAppNamePortal -t SQLAzure --output $azCliOutput --settings DefaultConnection=$DefaultConnectionKeyVault
+az webapp config connection-string set -g $ResourceGroupForDeployment -n $WebAppNamePortal -t PostgreSQL --output $azCliOutput --settings DefaultConnection=$DefaultConnectionKeyVault
 az webapp config appsettings set -g $ResourceGroupForDeployment  -n $WebAppNamePortal --output $azCliOutput --settings SaaSApiConfiguration__AdAuthenticationEndPoint=https://login.microsoftonline.com SaaSApiConfiguration__ClientId=$ADApplicationID SaaSApiConfiguration__ClientSecret=$ADApplicationSecretKeyVault SaaSApiConfiguration__FulFillmentAPIBaseURL=https://marketplaceapi.microsoft.com/api SaaSApiConfiguration__FulFillmentAPIVersion=2018-08-31 SaaSApiConfiguration__GrantType=client_credentials SaaSApiConfiguration__MTClientId=$ADMTApplicationIDPortal SaaSApiConfiguration__Resource=20e940b3-4c77-4b0b-9a53-9e16a1b010a7 SaaSApiConfiguration__TenantId=$TenantID SaaSApiConfiguration__SignedOutRedirectUri=https://$WebAppNamePrefix-portal.azurewebsites.net/Home/Index/ SaaSApiConfiguration_CodeHash=$SaaSApiConfiguration_CodeHash
 az webapp config set -g $ResourceGroupForDeployment -n $WebAppNamePortal --always-on true --output $azCliOutput
 
@@ -571,16 +591,19 @@ az webapp config set -g $ResourceGroupForDeployment -n $WebAppNamePortal --alway
 Write-host "📜 Deploy Code"
 
 Write-host "   🔵 Deploy Database"
-Write-host "      ➡️ Generate SQL schema/data script"
-$ConnectionString="Server=tcp:"+$ServerUri+";Database="+$SQLDatabaseName+";Authentication=Active Directory Default;"
+Write-host "      ➡️ Generate PostgreSQL schema/data script"
+$ConnectionString=$Connection
 Set-Content -Path ../src/AdminSite/appsettings.Development.json -value "{`"ConnectionStrings`": {`"DefaultConnection`":`"$ConnectionString`"}}"
 dotnet-ef migrations script  --output script.sql --idempotent --context SaaSKitContext --project ../src/DataAccess/DataAccess.csproj --startup-project ../src/AdminSite/AdminSite.csproj
-Write-host "      ➡️ Execute SQL schema/data script"
-Invoke-Sqlcmd -InputFile ./script.sql -ConnectionString $ConnectionString
-
-Write-host "      ➡️ Execute SQL script to Add WebApps"
-$AddAppsIdsToDB = "CREATE USER [$WebAppNameAdmin] FROM EXTERNAL PROVIDER;ALTER ROLE db_datareader ADD MEMBER  [$WebAppNameAdmin];ALTER ROLE db_datawriter ADD MEMBER  [$WebAppNameAdmin]; GRANT EXEC TO [$WebAppNameAdmin]; CREATE USER [$WebAppNamePortal] FROM EXTERNAL PROVIDER;ALTER ROLE db_datareader ADD MEMBER [$WebAppNamePortal];ALTER ROLE db_datawriter ADD MEMBER [$WebAppNamePortal]; GRANT EXEC TO [$WebAppNamePortal];"
-Invoke-Sqlcmd -Query $AddAppsIdsToDB -ConnectionString $ConnectionString
+Write-host "      ➡️ Execute PostgreSQL schema/data script on private VM"
+. "$PSScriptRoot/postgres/Invoke-PostgresMigration.ps1"
+Invoke-PostgresMigration `
+    -ResourceGroup $ResourceGroupForDeployment `
+    -VmName $SQLServerName `
+    -DatabaseName $SQLDatabaseName `
+    -DatabaseUser $PostgresAdminUser `
+    -DatabasePassword $PostgresAdminPassword `
+    -ScriptPath "./script.sql"
 
 Write-host "   🔵 Deploy Code to Admin Portal"
 az webapp deploy --resource-group $ResourceGroupForDeployment --name $WebAppNameAdmin --src-path "../Publish/AdminSite.zip" --type zip --output $azCliOutput
@@ -588,10 +611,9 @@ az webapp deploy --resource-group $ResourceGroupForDeployment --name $WebAppName
 Write-host "   🔵 Deploy Code to Customer Portal"
 az webapp deploy --resource-group $ResourceGroupForDeployment --name $WebAppNamePortal --src-path "../Publish/CustomerSite.zip" --type zip --output $azCliOutput
 
-Write-host "   🔵 Update Firewall for WebApps and SQL"
+Write-host "   🔵 Update VNet integration for WebApps"
 az webapp vnet-integration add --resource-group $ResourceGroupForDeployment --name $WebAppNamePortal --vnet $VnetName --subnet $WebSubnetName --output $azCliOutput
 az webapp vnet-integration add --resource-group $ResourceGroupForDeployment --name $WebAppNameAdmin --vnet $VnetName --subnet $WebSubnetName --output $azCliOutput
-az sql server vnet-rule create --name $WebAppNamePrefix-vnet --resource-group $ResourceGroupForDeployment --server $SQLServerName --vnet-name $VnetName --subnet $WebSubnetName --output $azCliOutput
 
 Write-host "   🔵 Clean up"
 Remove-Item -Path ../src/AdminSite/appsettings.Development.json
@@ -599,24 +621,6 @@ Remove-Item -Path script.sql
 #Remove-Item -Path ../Publish -recurse -Force
 
 #endregion
-
-#region Create SQL Private Endpoints
-# Get SQL Server
-$sqlServerId=az sql server show --name $SQLServerName --resource-group $ResourceGroupForDeployment --query id -o tsv
-
-# Create a private endpoint
-az network private-endpoint create --name $privateSqlEndpointName --resource-group $ResourceGroupForDeployment --vnet-name $vnetName --subnet $SqlSubnetName --private-connection-resource-id $sqlServerId --group-ids sqlServer --connection-name sqlConnection
-
-
-# Create a SQL private DNS zone
-az network private-dns zone create --name $privateSqlDnsZoneName --resource-group $ResourceGroupForDeployment
-
-# Link the SQL private DNS zone to the VNet
-az network private-dns link vnet create --name $privateSqlLink --resource-group $ResourceGroupForDeployment --virtual-network $vnetName --zone-name $privateSqlDnsZoneName --registration-enabled false
-
-az network private-endpoint dns-zone-group create --resource-group $ResourceGroupForDeployment --endpoint-name $privateSqlEndpointName --name "sql-zone-group"   --private-dns-zone $privateSqlDnsZoneName   --zone-name "sqlserver"
-#endregion
-
 
 #region Create KV Private Endpoints
 # Get KV Server

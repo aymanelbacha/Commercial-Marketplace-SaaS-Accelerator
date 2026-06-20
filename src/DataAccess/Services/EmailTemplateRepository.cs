@@ -56,7 +56,7 @@ public class EmailTemplateRepository : IEmailTemplateRepository
     /// </returns>
     public string GetEmailBodyForSubscription(Guid subscriptionID, string processStatus)
     {
-        var emialResult = this.context.SubscriptionEmailOutput.FromSqlRaw("dbo.spGetFormattedEmailBody {0},{1}", subscriptionID, processStatus).ToList();
+        var emialResult = this.context.SubscriptionEmailOutput.FromSqlRaw("SELECT * FROM sp_get_formatted_email_body({0}, {1})", subscriptionID.ToString(), processStatus).ToList();
         var emailRecord = emialResult.FirstOrDefault();
         if (emailRecord != null)
         {

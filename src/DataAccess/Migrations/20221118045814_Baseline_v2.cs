@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
+using System;
 using Marketplace.SaaS.Accelerator.DataAccess.Migrations.Custom;
 using Microsoft.EntityFrameworkCore.Migrations;
 
@@ -15,10 +16,10 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                 columns: table => new
                 {
                     ID = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    Name = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
-                    Value = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    Description = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: true)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    Name = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    Value = table.Column<string>(type: "text", nullable: true),
+                    Description = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true)
                 },
                 constraints: table =>
                 {
@@ -30,9 +31,9 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    ActionTime = table.Column<DateTime>(type: "datetime", nullable: true),
-                    LogDetail = table.Column<string>(type: "varchar(4000)", unicode: false, maxLength: 4000, nullable: true)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    ActionTime = table.Column<DateTime>(type: "timestamp without time zone", nullable: true),
+                    LogDetail = table.Column<string>(type: "character varying(4000)", unicode: false, maxLength: 4000, nullable: true)
                 },
                 constraints: table =>
                 {
@@ -44,11 +45,11 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                 columns: table => new
                 {
                     ID = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
                     VersionNumber = table.Column<decimal>(type: "decimal(6,2)", nullable: false),
-                    ChangeLog = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    CreateDate = table.Column<DateTime>(type: "datetime", nullable: false),
-                    CreateBy = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true)
+                    ChangeLog = table.Column<string>(type: "text", nullable: false),
+                    CreateDate = table.Column<DateTime>(type: "timestamp without time zone", nullable: false),
+                    CreateBy = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true)
                 },
                 constraints: table =>
                 {
@@ -59,16 +60,16 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                 columns: table => new
                 {
                     ID = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    Status = table.Column<string>(type: "varchar(1000)", unicode: false, maxLength: 1000, nullable: true),
-                    Description = table.Column<string>(type: "varchar(1000)", unicode: false, maxLength: 1000, nullable: true),
-                    InsertDate = table.Column<DateTime>(type: "datetime", nullable: true),
-                    TemplateBody = table.Column<string>(type: "varchar(max)", unicode: false, nullable: true),
-                    Subject = table.Column<string>(type: "varchar(1000)", unicode: false, maxLength: 1000, nullable: true),
-                    ToRecipients = table.Column<string>(type: "varchar(1000)", unicode: false, maxLength: 1000, nullable: true),
-                    CC = table.Column<string>(type: "varchar(1000)", unicode: false, maxLength: 1000, nullable: true),
-                    BCC = table.Column<string>(type: "varchar(1000)", unicode: false, maxLength: 1000, nullable: true),
-                    IsActive = table.Column<bool>(type: "bit", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    Status = table.Column<string>(type: "character varying(1000)", unicode: false, maxLength: 1000, nullable: true),
+                    Description = table.Column<string>(type: "character varying(1000)", unicode: false, maxLength: 1000, nullable: true),
+                    InsertDate = table.Column<DateTime>(type: "timestamp without time zone", nullable: true),
+                    TemplateBody = table.Column<string>(type: "text", unicode: false, nullable: true),
+                    Subject = table.Column<string>(type: "character varying(1000)", unicode: false, maxLength: 1000, nullable: true),
+                    ToRecipients = table.Column<string>(type: "character varying(1000)", unicode: false, maxLength: 1000, nullable: true),
+                    CC = table.Column<string>(type: "character varying(1000)", unicode: false, maxLength: 1000, nullable: true),
+                    BCC = table.Column<string>(type: "character varying(1000)", unicode: false, maxLength: 1000, nullable: true),
+                    IsActive = table.Column<bool>(type: "boolean", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -80,10 +81,10 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                 columns: table => new
                 {
                     EventsId = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    EventsName = table.Column<string>(type: "varchar(225)", unicode: false, maxLength: 225, nullable: true),
-                    IsActive = table.Column<bool>(type: "bit", nullable: true),
-                    CreateDate = table.Column<DateTime>(type: "datetime", nullable: true)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    EventsName = table.Column<string>(type: "character varying(225)", unicode: false, maxLength: 225, nullable: true),
+                    IsActive = table.Column<bool>(type: "boolean", nullable: true),
+                    CreateDate = table.Column<DateTime>(type: "timestamp without time zone", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -95,23 +96,23 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                 columns: table => new
                 {
                     ID = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    ParameterId = table.Column<string>(type: "varchar(225)", unicode: false, maxLength: 225, nullable: true),
-                    DisplayName = table.Column<string>(type: "varchar(225)", unicode: false, maxLength: 225, nullable: true),
-                    Description = table.Column<string>(type: "varchar(225)", unicode: false, maxLength: 225, nullable: true),
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    ParameterId = table.Column<string>(type: "character varying(225)", unicode: false, maxLength: 225, nullable: true),
+                    DisplayName = table.Column<string>(type: "character varying(225)", unicode: false, maxLength: 225, nullable: true),
+                    Description = table.Column<string>(type: "character varying(225)", unicode: false, maxLength: 225, nullable: true),
                     ValueTypeId = table.Column<int>(type: "int", nullable: true),
-                    FromList = table.Column<bool>(type: "bit", nullable: false),
-                    ValuesList = table.Column<string>(type: "varchar(max)", unicode: false, nullable: true),
+                    FromList = table.Column<bool>(type: "boolean", nullable: false),
+                    ValuesList = table.Column<string>(type: "text", unicode: false, nullable: true),
                     Max = table.Column<int>(type: "int", nullable: true),
                     Min = table.Column<int>(type: "int", nullable: true),
-                    Type = table.Column<string>(type: "varchar(225)", unicode: false, maxLength: 225, nullable: true),
+                    Type = table.Column<string>(type: "character varying(225)", unicode: false, maxLength: 225, nullable: true),
                     DisplaySequence = table.Column<int>(type: "int", nullable: true),
-                    Isactive = table.Column<bool>(type: "bit", nullable: false),
-                    CreateDate = table.Column<DateTime>(type: "datetime", nullable: true),
+                    Isactive = table.Column<bool>(type: "boolean", nullable: false),
+                    CreateDate = table.Column<DateTime>(type: "timestamp without time zone", nullable: true),
                     UserId = table.Column<int>(type: "int", nullable: true),
-                    OfferId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    IsDelete = table.Column<bool>(type: "bit", nullable: true),
-                    IsRequired = table.Column<bool>(type: "bit", nullable: true)
+                    OfferId = table.Column<Guid>(type: "uuid", nullable: false),
+                    IsDelete = table.Column<bool>(type: "boolean", nullable: true),
+                    IsRequired = table.Column<bool>(type: "boolean", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -123,12 +124,12 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    OfferId = table.Column<string>(type: "varchar(225)", unicode: false, maxLength: 225, nullable: true),
-                    OfferName = table.Column<string>(type: "varchar(225)", unicode: false, maxLength: 225, nullable: true),
-                    CreateDate = table.Column<DateTime>(type: "datetime", nullable: true),
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    OfferId = table.Column<string>(type: "character varying(225)", unicode: false, maxLength: 225, nullable: true),
+                    OfferName = table.Column<string>(type: "character varying(225)", unicode: false, maxLength: 225, nullable: true),
+                    CreateDate = table.Column<DateTime>(type: "timestamp without time zone", nullable: true),
                     UserId = table.Column<int>(type: "int", nullable: true),
-                    OfferGUId = table.Column<Guid>(type: "uniqueidentifier", nullable: false)
+                    OfferGUId = table.Column<Guid>(type: "uuid", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -140,11 +141,11 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                 columns: table => new
                 {
                     PlanAttributeId = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    PlanId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    PlanId = table.Column<Guid>(type: "uuid", nullable: false),
                     OfferAttributeID = table.Column<int>(type: "int", nullable: false),
-                    IsEnabled = table.Column<bool>(type: "bit", nullable: false),
-                    CreateDate = table.Column<DateTime>(type: "datetime", nullable: true),
+                    IsEnabled = table.Column<bool>(type: "boolean", nullable: false),
+                    CreateDate = table.Column<DateTime>(type: "timestamp without time zone", nullable: true),
                     UserId = table.Column<int>(type: "int", nullable: true)
                 },
                 constraints: table =>
@@ -158,11 +159,11 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                 {
                     RowNumber = table.Column<int>(type: "int", nullable: false),
                     PlanAttributeId = table.Column<int>(type: "int", nullable: false),
-                    PlanId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    PlanId = table.Column<Guid>(type: "uuid", nullable: false),
                     OfferAttributeId = table.Column<int>(type: "int", nullable: false),
-                    DisplayName = table.Column<string>(type: "varchar(225)", unicode: false, maxLength: 225, nullable: false),
-                    IsEnabled = table.Column<bool>(type: "bit", nullable: false),
-                    Type = table.Column<string>(type: "varchar(225)", unicode: false, maxLength: 225, nullable: true)
+                    DisplayName = table.Column<string>(type: "character varying(225)", unicode: false, maxLength: 225, nullable: false),
+                    IsEnabled = table.Column<bool>(type: "boolean", nullable: false),
+                    Type = table.Column<string>(type: "character varying(225)", unicode: false, maxLength: 225, nullable: true)
                 },
                 constraints: table =>
                 {
@@ -174,15 +175,15 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    PlanId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    PlanId = table.Column<Guid>(type: "uuid", nullable: false),
                     EventId = table.Column<int>(type: "int", nullable: false),
-                    Isactive = table.Column<bool>(type: "bit", nullable: false),
-                    SuccessStateEmails = table.Column<string>(type: "varchar(225)", unicode: false, maxLength: 225, nullable: true),
-                    FailureStateEmails = table.Column<string>(type: "varchar(225)", unicode: false, maxLength: 225, nullable: true),
-                    CreateDate = table.Column<DateTime>(type: "datetime", nullable: true),
+                    Isactive = table.Column<bool>(type: "boolean", nullable: false),
+                    SuccessStateEmails = table.Column<string>(type: "character varying(225)", unicode: false, maxLength: 225, nullable: true),
+                    FailureStateEmails = table.Column<string>(type: "character varying(225)", unicode: false, maxLength: 225, nullable: true),
+                    CreateDate = table.Column<DateTime>(type: "timestamp without time zone", nullable: true),
                     UserId = table.Column<int>(type: "int", nullable: true),
-                    CopyToCustomer = table.Column<bool>(type: "bit", nullable: true)
+                    CopyToCustomer = table.Column<bool>(type: "boolean", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -195,13 +196,13 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                 {
                     RowNumber = table.Column<int>(type: "int", nullable: false),
                     ID = table.Column<int>(type: "int", nullable: false),
-                    PlanId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    Isactive = table.Column<bool>(type: "bit", nullable: false),
-                    SuccessStateEmails = table.Column<string>(type: "varchar(max)", unicode: false, nullable: true),
-                    FailureStateEmails = table.Column<string>(type: "varchar(max)", unicode: false, nullable: true),
+                    PlanId = table.Column<Guid>(type: "uuid", nullable: false),
+                    Isactive = table.Column<bool>(type: "boolean", nullable: false),
+                    SuccessStateEmails = table.Column<string>(type: "text", unicode: false, nullable: true),
+                    FailureStateEmails = table.Column<string>(type: "text", unicode: false, nullable: true),
                     EventId = table.Column<int>(type: "int", nullable: false),
-                    EventsName = table.Column<string>(type: "varchar(225)", unicode: false, maxLength: 225, nullable: false),
-                    CopyToCustomer = table.Column<bool>(type: "bit", nullable: true)
+                    EventsName = table.Column<string>(type: "character varying(225)", unicode: false, maxLength: 225, nullable: false),
+                    CopyToCustomer = table.Column<bool>(type: "boolean", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -213,14 +214,14 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    PlanId = table.Column<string>(type: "varchar(100)", unicode: false, maxLength: 100, nullable: true),
-                    Description = table.Column<string>(type: "varchar(500)", unicode: false, maxLength: 500, nullable: true),
-                    DisplayName = table.Column<string>(type: "varchar(100)", unicode: false, maxLength: 100, nullable: true),
-                    IsmeteringSupported = table.Column<bool>(type: "bit", nullable: true),
-                    IsPerUser = table.Column<bool>(type: "bit", nullable: true),
-                    PlanGUID = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    OfferID = table.Column<Guid>(type: "uniqueidentifier", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    PlanId = table.Column<string>(type: "character varying(100)", unicode: false, maxLength: 100, nullable: true),
+                    Description = table.Column<string>(type: "character varying(500)", unicode: false, maxLength: 500, nullable: true),
+                    DisplayName = table.Column<string>(type: "character varying(100)", unicode: false, maxLength: 100, nullable: true),
+                    IsmeteringSupported = table.Column<bool>(type: "boolean", nullable: true),
+                    IsPerUser = table.Column<bool>(type: "boolean", nullable: true),
+                    PlanGUID = table.Column<Guid>(type: "uuid", nullable: false),
+                    OfferID = table.Column<Guid>(type: "uuid", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -232,8 +233,8 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    Name = table.Column<string>(type: "varchar(50)", unicode: false, maxLength: 50, nullable: true)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    Name = table.Column<string>(type: "character varying(50)", unicode: false, maxLength: 50, nullable: true)
                 },
                 constraints: table =>
                 {
@@ -245,14 +246,14 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                 columns: table => new
                 {
                     ID = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
                     PlanAttributeId = table.Column<int>(type: "int", nullable: false),
-                    Value = table.Column<string>(type: "varchar(225)", unicode: false, maxLength: 225, nullable: true),
-                    SubscriptionId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    CreateDate = table.Column<DateTime>(type: "datetime", nullable: true),
+                    Value = table.Column<string>(type: "character varying(225)", unicode: false, maxLength: 225, nullable: true),
+                    SubscriptionId = table.Column<Guid>(type: "uuid", nullable: false),
+                    CreateDate = table.Column<DateTime>(type: "timestamp without time zone", nullable: true),
                     UserId = table.Column<int>(type: "int", nullable: true),
-                    PlanID = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    OfferID = table.Column<Guid>(type: "uniqueidentifier", nullable: false)
+                    PlanID = table.Column<Guid>(type: "uuid", nullable: false),
+                    OfferID = table.Column<Guid>(type: "uuid", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -264,9 +265,9 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    Name = table.Column<string>(type: "varchar(225)", unicode: false, maxLength: 225, nullable: true),
-                    Value = table.Column<string>(type: "varchar(max)", unicode: false, nullable: true)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    Name = table.Column<string>(type: "character varying(225)", unicode: false, maxLength: 225, nullable: true),
+                    Value = table.Column<string>(type: "text", unicode: false, nullable: true)
                 },
                 constraints: table =>
                 {
@@ -280,23 +281,23 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                     Id = table.Column<int>(type: "int", nullable: false),
                     PlanAttributeId = table.Column<int>(type: "int", nullable: false),
                     OfferAttributeID = table.Column<int>(type: "int", nullable: false),
-                    DisplayName = table.Column<string>(type: "varchar(225)", unicode: false, maxLength: 225, nullable: false),
-                    Type = table.Column<string>(type: "varchar(225)", unicode: false, maxLength: 225, nullable: false),
-                    ValueType = table.Column<string>(type: "varchar(225)", unicode: false, maxLength: 225, nullable: false),
+                    DisplayName = table.Column<string>(type: "character varying(225)", unicode: false, maxLength: 225, nullable: false),
+                    Type = table.Column<string>(type: "character varying(225)", unicode: false, maxLength: 225, nullable: false),
+                    ValueType = table.Column<string>(type: "character varying(225)", unicode: false, maxLength: 225, nullable: false),
                     DisplaySequence = table.Column<int>(type: "int", nullable: false),
-                    IsEnabled = table.Column<bool>(type: "bit", nullable: false),
-                    IsRequired = table.Column<bool>(type: "bit", nullable: true),
-                    Value = table.Column<string>(type: "varchar(max)", unicode: false, nullable: false),
-                    SubscriptionId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    OfferId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    PlanId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    IsEnabled = table.Column<bool>(type: "boolean", nullable: false),
+                    IsRequired = table.Column<bool>(type: "boolean", nullable: true),
+                    Value = table.Column<string>(type: "text", unicode: false, nullable: false),
+                    SubscriptionId = table.Column<Guid>(type: "uuid", nullable: false),
+                    OfferId = table.Column<Guid>(type: "uuid", nullable: false),
+                    PlanId = table.Column<Guid>(type: "uuid", nullable: false),
                     UserId = table.Column<int>(type: "int", nullable: true),
-                    CreateDate = table.Column<DateTime>(type: "datetime", nullable: true),
-                    FromList = table.Column<bool>(type: "bit", nullable: false),
-                    ValuesList = table.Column<string>(type: "varchar(225)", unicode: false, maxLength: 225, nullable: false),
+                    CreateDate = table.Column<DateTime>(type: "timestamp without time zone", nullable: true),
+                    FromList = table.Column<bool>(type: "boolean", nullable: false),
+                    ValuesList = table.Column<string>(type: "character varying(225)", unicode: false, maxLength: 225, nullable: false),
                     Max = table.Column<int>(type: "int", nullable: false),
                     Min = table.Column<int>(type: "int", nullable: false),
-                    HTMLType = table.Column<string>(type: "varchar(225)", unicode: false, maxLength: 225, nullable: false)
+                    HTMLType = table.Column<string>(type: "character varying(225)", unicode: false, maxLength: 225, nullable: false)
                 },
                 constraints: table =>
                 {
@@ -308,10 +309,10 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                 columns: table => new
                 {
                     UserId = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    EmailAddress = table.Column<string>(type: "varchar(100)", unicode: false, maxLength: 100, nullable: true),
-                    CreatedDate = table.Column<DateTime>(type: "datetime", nullable: true),
-                    FullName = table.Column<string>(type: "varchar(200)", unicode: false, maxLength: 200, nullable: true)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    EmailAddress = table.Column<string>(type: "character varying(100)", unicode: false, maxLength: 100, nullable: true),
+                    CreatedDate = table.Column<DateTime>(type: "timestamp without time zone", nullable: true),
+                    FullName = table.Column<string>(type: "character varying(200)", unicode: false, maxLength: 200, nullable: true)
                 },
                 constraints: table =>
                 {
@@ -323,10 +324,10 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                 columns: table => new
                 {
                     ValueTypeId = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    ValueType = table.Column<string>(type: "varchar(225)", unicode: false, maxLength: 225, nullable: true),
-                    CreateDate = table.Column<DateTime>(type: "datetime", nullable: true),
-                    HTMLType = table.Column<string>(type: "varchar(225)", unicode: false, maxLength: 225, nullable: true)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    ValueType = table.Column<string>(type: "character varying(225)", unicode: false, maxLength: 225, nullable: true),
+                    CreateDate = table.Column<DateTime>(type: "timestamp without time zone", nullable: true),
+                    HTMLType = table.Column<string>(type: "character varying(225)", unicode: false, maxLength: 225, nullable: true)
                 },
                 constraints: table =>
                 {
@@ -338,11 +339,11 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                 columns: table => new
                 {
                     ID = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    SubscriptionId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
-                    SubscriptionStatus = table.Column<string>(type: "varchar(225)", unicode: false, maxLength: 225, nullable: true),
-                    Description = table.Column<string>(type: "varchar(max)", unicode: false, nullable: true),
-                    InsertDate = table.Column<DateTime>(type: "datetime", nullable: true)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    SubscriptionId = table.Column<Guid>(type: "uuid", nullable: true),
+                    SubscriptionStatus = table.Column<string>(type: "character varying(225)", unicode: false, maxLength: 225, nullable: true),
+                    Description = table.Column<string>(type: "text", unicode: false, nullable: true),
+                    InsertDate = table.Column<DateTime>(type: "timestamp without time zone", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -354,11 +355,11 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    Dimension = table.Column<string>(type: "varchar(150)", unicode: false, maxLength: 150, nullable: true),
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    Dimension = table.Column<string>(type: "character varying(150)", unicode: false, maxLength: 150, nullable: true),
                     PlanId = table.Column<int>(type: "int", nullable: true),
-                    CreatedDate = table.Column<DateTime>(type: "datetime", nullable: true),
-                    Description = table.Column<string>(type: "varchar(250)", unicode: false, maxLength: 250, nullable: true)
+                    CreatedDate = table.Column<DateTime>(type: "timestamp without time zone", nullable: true),
+                    Description = table.Column<string>(type: "character varying(250)", unicode: false, maxLength: 250, nullable: true)
                 },
                 constraints: table =>
                 {
@@ -375,8 +376,8 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    UserEmail = table.Column<string>(type: "varchar(50)", unicode: false, maxLength: 50, nullable: true),
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    UserEmail = table.Column<string>(type: "character varying(50)", unicode: false, maxLength: 50, nullable: true),
                     RoleId = table.Column<int>(type: "int", nullable: false)
                 },
                 constraints: table =>
@@ -394,19 +395,19 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    AMPSubscriptionId = table.Column<Guid>(type: "uniqueidentifier", nullable: false, defaultValueSql: "(newid())"),
-                    SubscriptionStatus = table.Column<string>(type: "varchar(50)", unicode: false, maxLength: 50, nullable: true),
-                    AMPPlanId = table.Column<string>(type: "varchar(100)", unicode: false, maxLength: 100, nullable: true),
-                    IsActive = table.Column<bool>(type: "bit", nullable: true),
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    AMPSubscriptionId = table.Column<Guid>(type: "uuid", nullable: false, defaultValueSql: "(newid())"),
+                    SubscriptionStatus = table.Column<string>(type: "character varying(50)", unicode: false, maxLength: 50, nullable: true),
+                    AMPPlanId = table.Column<string>(type: "character varying(100)", unicode: false, maxLength: 100, nullable: true),
+                    IsActive = table.Column<bool>(type: "boolean", nullable: true),
                     CreateBy = table.Column<int>(type: "int", nullable: true),
-                    CreateDate = table.Column<DateTime>(type: "datetime", nullable: true),
-                    ModifyDate = table.Column<DateTime>(type: "datetime", nullable: true),
+                    CreateDate = table.Column<DateTime>(type: "timestamp without time zone", nullable: true),
+                    ModifyDate = table.Column<DateTime>(type: "timestamp without time zone", nullable: true),
                     UserId = table.Column<int>(type: "int", nullable: true),
-                    Name = table.Column<string>(type: "varchar(100)", unicode: false, maxLength: 100, nullable: true),
+                    Name = table.Column<string>(type: "character varying(100)", unicode: false, maxLength: 100, nullable: true),
                     AMPQuantity = table.Column<int>(type: "int", nullable: false),
-                    PurchaserEmail = table.Column<string>(type: "varchar(225)", unicode: false, maxLength: 225, nullable: true),
-                    PurchaserTenantId = table.Column<Guid>(type: "uniqueidentifier", nullable: true)
+                    PurchaserEmail = table.Column<string>(type: "character varying(225)", unicode: false, maxLength: 225, nullable: true),
+                    PurchaserTenantId = table.Column<Guid>(type: "uuid", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -423,14 +424,14 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
                     SubscriptionId = table.Column<int>(type: "int", nullable: true),
-                    RequestJson = table.Column<string>(type: "varchar(500)", unicode: false, maxLength: 500, nullable: true),
-                    ResponseJson = table.Column<string>(type: "varchar(500)", unicode: false, maxLength: 500, nullable: true),
-                    StatusCode = table.Column<string>(type: "varchar(100)", unicode: false, maxLength: 100, nullable: true),
-                    CreatedDate = table.Column<DateTime>(type: "datetime", nullable: true),
+                    RequestJson = table.Column<string>(type: "character varying(500)", unicode: false, maxLength: 500, nullable: true),
+                    ResponseJson = table.Column<string>(type: "character varying(500)", unicode: false, maxLength: 500, nullable: true),
+                    StatusCode = table.Column<string>(type: "character varying(100)", unicode: false, maxLength: 100, nullable: true),
+                    CreatedDate = table.Column<DateTime>(type: "timestamp without time zone", nullable: true),
                     CreatedBy = table.Column<int>(type: "int", nullable: false),
-                    SubscriptionUsageDate = table.Column<DateTime>(type: "datetime", nullable: true)
+                    SubscriptionUsageDate = table.Column<DateTime>(type: "timestamp without time zone", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -447,12 +448,12 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
                     SubscriptionID = table.Column<int>(type: "int", nullable: true),
-                    Attribute = table.Column<string>(type: "varchar(20)", unicode: false, maxLength: 20, nullable: true),
-                    OldValue = table.Column<string>(type: "varchar(50)", unicode: false, maxLength: 50, nullable: true),
-                    NewValue = table.Column<string>(type: "varchar(max)", unicode: false, nullable: true),
-                    CreateDate = table.Column<DateTime>(type: "datetime", nullable: true),
+                    Attribute = table.Column<string>(type: "character varying(20)", unicode: false, maxLength: 20, nullable: true),
+                    OldValue = table.Column<string>(type: "character varying(50)", unicode: false, maxLength: 50, nullable: true),
+                    NewValue = table.Column<string>(type: "text", unicode: false, nullable: true),
+                    CreateDate = table.Column<DateTime>(type: "timestamp without time zone", nullable: true),
                     CreateBy = table.Column<int>(type: "int", nullable: true)
                 },
                 constraints: table =>

@@ -2,15 +2,14 @@
 # Licensed under the MIT License. See LICENSE file in the project root for license information.
 
 #
-# Powershell script to deploy the resources - Customer portal, Publisher portal and the Azure SQL Database
+# Powershell script to upgrade Customer portal, Publisher portal and PostgreSQL database on private Linux VM
 #
 
 Param(  
-   [string][Parameter(Mandatory)]$WebAppNamePrefix, # Prefix used for creating web applications
-   [string][Parameter(Mandatory)]$ResourceGroupForDeployment # Name of the resource group to deploy the resources
+   [string][Parameter(Mandatory)]$WebAppNamePrefix,
+   [string][Parameter(Mandatory)]$ResourceGroupForDeployment
 )
 
-# Define the message
 $message = @"
 The SaaS Accelerator is offered under the MIT License as open source software and is not supported by Microsoft.
 
@@ -19,176 +18,81 @@ If you need help with the accelerator or would like to report defects or feature
 Do you agree? (Y/N)
 "@
 
-# Display the message in yellow
 Write-Host $message -ForegroundColor Yellow
-
-# Prompt the user for input
 $response = Read-Host
-
-
-# Check the user's response
 if ($response -ne 'Y' -and $response -ne 'y') {
     Write-Host "You did not agree. Exiting..." -ForegroundColor Red
     exit
 }
 
-# Proceed if the user agrees
 Write-Host "Thank you for agreeing. Proceeding with the script..." -ForegroundColor Green
 
+$currentContext = az account show | ConvertFrom-Json
+$AzureSubscriptionID = $currentContext.id
+az account set -s $AzureSubscriptionID
+Write-Host "🔑 Azure Subscription '$AzureSubscriptionID' selected."
 
-#Get TenantID if not set as argument
-	$currentContext = az account show | ConvertFrom-Json
-	$currentTenant = $currentContext.tenantId
-	$currentSubscription = $currentContext.id
-
-	Get-AzTenant | Format-Table
-	$TenantID = $null
-    if (!($TenantID = Read-Host "⌨  Type your TenantID or press Enter to accept your current one [$currentTenant]")) { $TenantID = $currentTenant }  
-	
-	#Get Azure Subscription if not set as argument
-	Get-AzSubscription -TenantId $TenantID | Format-Table
-	$AzureSubscriptionID = $null
-	if (!($AzureSubscriptionID = Read-Host "⌨  Type your SubscriptionID or press Enter to accept your current one [$currentSubscription]")) { $AzureSubscriptionID = $currentSubscription }
-	#Set the AZ Cli context
-
-	az account set -s $AzureSubscriptionID
-	Write-Host "🔑 Azure Subscription '$AzureSubscriptionID' selected."
-
-#endregion
-
-Function String-Between
-{
-	[CmdletBinding()]
-	Param(
-		[Parameter(Mandatory=$true)][String]$Source,
-		[Parameter(Mandatory=$true)][String]$Start,
-		[Parameter(Mandatory=$true)][String]$End
-	)
-	$sIndex = $Source.indexOf($Start) + $Start.length
-	$eIndex = $Source.indexOf($End, $sIndex)
-	return $Source.Substring($sIndex, $eIndex-$sIndex)
-}
-
-# Setting variables
 $ErrorActionPreference = "Stop"
 $WebAppNameAdmin=$WebAppNamePrefix+"-admin"
 $WebAppNamePortal=$WebAppNamePrefix+"-portal"
 $KeyVault=$WebAppNamePrefix+"-kv"
 $SQLDatabaseName = $WebAppNamePrefix +"AMPSaaSDB"
-$SQLServerName = $WebAppNamePrefix + "-sql"
-$ServerUri = $SQLServerName+".database.windows.net"
-$ServerUriPrivate = $SQLServerName+".privatelink.database.windows.net"
+$PostgresVmName = $WebAppNamePrefix + "-pgvm"
+$PostgresAdminUser = "saasadmin"
 
 #region Deploy Database
 
-# Ask user if their env is private end point protected and run a if else based on the response
-$isPEenv = Read-Host "Is your environment setup with private endpoints? (Y/N)"
-
-#### THIS SECTION DEPLOYS CODE AND DATABASE CHANGES
 Write-host "#### STEP 1 Database deployment start####"
 
-if ($isPEenv -ne 'Y' -and $isPEenv -ne 'y') {
-	
-	Write-host "## STEP 1.1 Retrieved ConnectionString from KeyVault"
-	$ConnectionString = az keyvault secret show `
-		--vault-name $KeyVault `
-		--name "DefaultConnection" `
-		--query "{value:value}" `
-		--output tsv
+Write-host "## STEP 1.1 Retrieve connection string and VM credentials from Key Vault"
+$ConnectionString = az keyvault secret show --vault-name $KeyVault --name "DefaultConnection" --query value -o tsv
+$PostgresAdminPassword = az keyvault secret show --vault-name $KeyVault --name "PostgresAdminPassword" --query value -o tsv
 
-	#Extract components from ConnectionString since Invoke-Sqlcmd needs them separately
-	$Server = String-Between -source $ConnectionString -start "Data Source=" -end ";"
-	$Database = String-Between -source $ConnectionString -start "Initial Catalog=" -end ";"
-	$User = String-Between -source $ConnectionString -start "User Id=" -end ";"
-	$Pass = String-Between -source $ConnectionString -start "Password=" -end ";"
+Write-host "## STEP 1.2 Update connection string in AdminSite project"
+Set-Content -Path ../src/AdminSite/appsettings.Development.json -value "{`"ConnectionStrings`": {`"DefaultConnection`":`"$ConnectionString`"}}"
 
-	Write-host "## STEP 1.2 Update connection string to the Adminsite project"
-	Set-Content -Path ../src/AdminSite/appsettings.Development.json -value "{`"ConnectionStrings`": {`"DefaultConnection`":`"$ConnectionString`"}}"
+Write-host "## STEP 1.3 Generate PostgreSQL migration script"
+dotnet-ef migrations script `
+    --idempotent `
+    --context SaaSKitContext `
+    --project ../src/DataAccess/DataAccess.csproj `
+    --startup-project ../src/AdminSite/AdminSite.csproj `
+    --output script.sql
 
-	Write-host "## STEP 1.3 START Generating migration script"	
-	dotnet-ef migrations script `
-		--idempotent `
-		--context SaaSKitContext `
-		--project ../src/DataAccess/DataAccess.csproj `
-		--startup-project ../src/AdminSite/AdminSite.csproj `
-		--output script.sql
+$compatibilityScript = @"
+CREATE TABLE IF NOT EXISTS ""__EFMigrationsHistory"" (
+    ""MigrationId"" character varying(150) NOT NULL,
+    ""ProductVersion"" character varying(32) NOT NULL,
+    CONSTRAINT ""PK___EFMigrationsHistory"" PRIMARY KEY (""MigrationId"")
+);
+"@
 
-    $compatibilityScript = "
-	IF OBJECT_ID(N'[__EFMigrationsHistory]') IS NULL 
-	-- No __EFMigrations table means Database has not been upgraded to support EF Migrations
-	BEGIN
-		CREATE TABLE [__EFMigrationsHistory] (
-			[MigrationId] nvarchar(150) NOT NULL,
-			[ProductVersion] nvarchar(32) NOT NULL,
-			CONSTRAINT [PK___EFMigrationsHistory] PRIMARY KEY ([MigrationId])
-		);
+Write-host "## STEP 1.4 Apply compatibility script on PostgreSQL VM"
+. "$PSScriptRoot/postgres/Invoke-PostgresMigration.ps1"
+$compatPath = Join-Path $env:TEMP "saas-compat.sql"
+Set-Content -Path $compatPath -Value $compatibilityScript -Encoding UTF8
+Invoke-PostgresMigration `
+    -ResourceGroup $ResourceGroupForDeployment `
+    -VmName $PostgresVmName `
+    -DatabaseName $SQLDatabaseName `
+    -DatabaseUser $PostgresAdminUser `
+    -DatabasePassword $PostgresAdminPassword `
+    -ScriptPath $compatPath
+Remove-Item $compatPath -Force
 
-		IF (SELECT TOP 1 VersionNumber FROM DatabaseVersionHistory ORDER BY CreateBy DESC) = '2.10'
-			INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion]) 
-				VALUES (N'20221118045814_Baseline_v2', N'6.0.1');
-
-		IF (SELECT TOP 1 VersionNumber FROM DatabaseVersionHistory ORDER BY CreateBy DESC) = '5.00'
-			INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])  
-				VALUES (N'20221118045814_Baseline_v2', N'6.0.1'), (N'20221118203340_Baseline_v5', N'6.0.1');
-
-		IF (SELECT TOP 1 VersionNumber FROM DatabaseVersionHistory ORDER BY CreateBy DESC) = '6.10'
-			INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])  
-				VALUES (N'20221118045814_Baseline_v2', N'6.0.1'), (N'20221118203340_Baseline_v5', N'6.0.1'), (N'20221118211554_Baseline_v6', N'6.0.1');
-	END;
-	GO"
-
-	
-	Write-host "## STEP 1.4 Running compatibility script"
-	Invoke-Sqlcmd -query $compatibilityScript -ServerInstance $Server -database $Database -Username $User -Password $Pass
-
-
-	Write-host "## STEP 1.5 START: Run migration against database"
-	Invoke-Sqlcmd -inputFile script.sql -ServerInstance $Server -database $Database -Username $User -Password $Pass
-	
-} else
-{
-	Write-host "## STEP 1.1 Constructing connection string with AAD auth"
-	$ConnectionString="Server=tcp:"+$ServerUriPrivate+";Database="+$SQLDatabaseName+";TrustServerCertificate=True;Authentication=Active Directory Default;"
-
-	Write-host "## STEP 1.2 Update connection string to the Adminsite project"
-	Set-Content -Path ../src/AdminSite/appsettings.Development.json -value "{`"ConnectionStrings`": {`"DefaultConnection`":`"$ConnectionString`"}}"
-
-	Write-host "## STEP 1.3 START Generating migration script"	
-	dotnet-ef migrations script `
-		--idempotent `
-		--context SaaSKitContext `
-		--project ../src/DataAccess/DataAccess.csproj `
-		--startup-project ../src/AdminSite/AdminSite.csproj `
-		--output script.sql
-
-	Write-Host "## STEP 1.4 Getting the IP"
-	$currentIP = (Invoke-WebRequest -Uri "http://ifconfig.me/ip").Content.Trim()
-	
-	Write-Host "## STEP 1.5 Add the current IP to the SQL server firewall rules"
-	az sql server firewall-rule create `
-		--resource-group $ResourceGroupForDeployment `
-		--server $SQLServerName `
-		--name "SAAllowCurrentIP" `
-		--start-ip-address $currentIP `
-		--end-ip-address $currentIP
-
-	Write-Host "## STEP 1.6 Current IP added to SQL server firewall rules." -ForegroundColor Green
-
-	Write-host "## STEP 1.7 ➡️ Execute SQL schema/data script"
-	Invoke-Sqlcmd -InputFile ./script.sql -ConnectionString $ConnectionString
-
-	Write-host "## STEP 1.8 START: Removing the client IP which was added at 1.5"
-	az sql server firewall-rule delete `
-		--resource-group $ResourceGroupForDeployment `
-		--server $SQLServerName `
-		--name "SAAllowCurrentIP" `
-}
+Write-host "## STEP 1.5 Apply migration script on PostgreSQL VM"
+Invoke-PostgresMigration `
+    -ResourceGroup $ResourceGroupForDeployment `
+    -VmName $PostgresVmName `
+    -DatabaseName $SQLDatabaseName `
+    -DatabaseUser $PostgresAdminUser `
+    -DatabasePassword $PostgresAdminPassword `
+    -ScriptPath "./script.sql"
 
 Remove-Item -Path ../src/AdminSite/appsettings.Development.json
 Remove-Item -Path script.sql
 
 Write-host "#### Database Deployment complete ####"	
-
 
 #endregion Deploy Database
 

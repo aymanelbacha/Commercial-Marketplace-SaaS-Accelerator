@@ -2,8 +2,14 @@
 #
 # To configure this workflow:
 # 1. Set up secrets
-#     AZURE_CUSTOMER_WEBAPP_NAME - set to the name of the publisher APP
+#     AZURE_CUSTOMER_WEBAPP_NAME - set to the name of the customer APP
 #     AZURE_CUSTOMER_WEBAPP_PUBLISH_PROFILE - upload contents of Azure Customer App publish profile.
+#     POSTGRES_HOST - private IP of the PostgreSQL VM
+#     POSTGRES_DATABASE_NAME - database name (e.g. prefixAMPSaaSDB)
+#     POSTGRES_ADMIN_USER - PostgreSQL application user (default: saasadmin)
+#     POSTGRES_ADMIN_PASSWORD - PostgreSQL application password (from Key Vault)
+#     POSTGRES_VM_NAME - name of the private PostgreSQL Linux VM
+#     AZURE_RESOURCE_GROUP - resource group containing the PostgreSQL VM
 #     AZURE_PUBLISHER_WEBAPP_NAME - set to the name of the publisher APP
 #     AZURE_PUBLISHER_WEBAPP_PUBLISH_PROFILE - upload contents of Azure Publisher App publish profile.
 #     UI_TEST_ADMIN_APP_URL -  Add the URL of Admin App to perform UI tests
@@ -86,27 +92,33 @@ jobs:
             Write-Host "dotnet tools restore"
             dotnet tool install --global dotnet-ef --version 8.0.0
             
-            Write-Host "Set to the Admin site connection string"
-            $sqlServerName = "${{ secrets.SQL_SERVER_NAME }}"
-            $sqlServerFullName = $sqlServerName+".database.windows.net"            
-            $sqlDatabaseName = "${{ secrets.SQL_DATABASE_NAME }}"
-            $sqlAdminLogin = "${{ secrets.SQL_ADMIN_LOGIN }}"
-            $sqlAdminPassword = "${{ secrets.SQL_ADMIN_LOGIN_PASSWORD }}"
+            Write-Host "Load PostgreSQL connection settings from secrets"
+            $postgresHost = "${{ secrets.POSTGRES_HOST }}"
+            $postgresDatabase = "${{ secrets.POSTGRES_DATABASE_NAME }}"
+            $postgresUser = "${{ secrets.POSTGRES_ADMIN_USER }}"
+            $postgresPassword = "${{ secrets.POSTGRES_ADMIN_PASSWORD }}"
+            $postgresVmName = "${{ secrets.POSTGRES_VM_NAME }}"
+            $resourceGroup = "${{ secrets.AZURE_RESOURCE_GROUP }}"
 
-            $connectionString = $Connection="Data Source=tcp:"+$sqlServerFullName+",1433;Initial Catalog="+$sqlDatabaseName+";User Id="+$sqlAdminLogin+"@"+$sqlServerFullName+";Password="+$sqlAdminPassword+";"
+            $connectionString = "Host=$postgresHost;Port=5432;Database=$postgresDatabase;Username=$postgresUser;Password=$postgresPassword;SSL Mode=Prefer;Trust Server Certificate=true"
             $publisherPath = "${{env.PUBLISHER_PROJECT_PATH}}/appsettings.Development.json"
             Set-Content -Path $publisherPath -value "{`"ConnectionStrings`": {`"DefaultConnection`":`"$connectionString`"}}"
             
-            Write-Host "Generate sql script"
+            Write-Host "Generate PostgreSQL migration script"
             $sqlscriptPath = "${{env.SQLSCRIPT_PATH}}/script.sql"
             $dbAccessProj = "${{env.DATAACCESS_PROJECT}}"
             $adminSiteProj = "${{env.PUBLISHER_PROJECT}}"
-            dotnet-ef migrations script  --output $sqlscriptPath --idempotent --context SaaSKitContext --project $dbAccessProj --startup-project $adminSiteProj
+            dotnet-ef migrations script --output $sqlscriptPath --idempotent --context SaaSKitContext --project $dbAccessProj --startup-project $adminSiteProj
             
-            Write-Host "Run sql script"
-            Set-PSRepository PSGallery -InstallationPolicy Trusted
-            Install-Module sqlserver
-            Invoke-Sqlcmd -InputFile $sqlscriptPath -ServerInstance $sqlServerFullName -database $sqlDatabaseName -Username $sqlAdminLogin -Password $sqlAdminPassword 
+            Write-Host "Apply migration script on private PostgreSQL VM"
+            . ./deployment/postgres/Invoke-PostgresMigration.ps1
+            Invoke-PostgresMigration `
+              -ResourceGroup $resourceGroup `
+              -VmName $postgresVmName `
+              -DatabaseName $postgresDatabase `
+              -DatabaseUser $postgresUser `
+              -DatabasePassword $postgresPassword `
+              -ScriptPath $sqlscriptPath
             Write-Host "Database updated successfully"
   
 

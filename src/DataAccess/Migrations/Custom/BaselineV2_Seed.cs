@@ -9,336 +9,13 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations.Custom
     {
         public static void BaselineV2_DeSeedAll(this MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.Sql(@"DROP PROCEDURE [dbo].[spGetSubscriptionParameters]");
-            migrationBuilder.Sql(@"DROP PROCEDURE [dbo].[spGetPlanEvents]");
-            migrationBuilder.Sql(@"DROP PROCEDURE [dbo].[spGetOfferParameters]");
-            migrationBuilder.Sql(@"DROP PROCEDURE [dbo].[spGetFormattedEmailBody]");
+            PostgresStoredProcedures.Drop(migrationBuilder);
         }
 
 
         public static void BaselineV2_SeedStoredProcedures(this MigrationBuilder migrationBuilder)
         {
-            //SQL Stored Procedures
-
-            migrationBuilder.Sql(@"
-/*   
-Exec spGetSubscriptionParameters '53ff9e28-a55b-65e1-ff75-709aec6420fd','a35d4259-f3c9-429b-a871-21c4593fa4bf'  
-*/
-EXEC(N'
-CREATE Procedure [dbo].[spGetSubscriptionParameters]  
-(  
-@SubscriptionId Uniqueidentifier,  
-@PlanId Uniqueidentifier  
-)  
-AS  
-BEGIN  
-   
-Declare @OfferId Uniqueidentifier   
-Set @OfferId=(Select OfferId from Plans where PlanGuId =@PlanId )  
-SELECT    
-  Cast( ROW_NUMBER() OVER ( ORDER BY OA.ID) as Int)RowNumber  
-,isnull(SAV.ID,0) ID  
-,isnull(SAV.PlanAttributeId,PA.PlanAttributeId) PlanAttributeId  
-,ISNULL(SAV.PlanId,@PlanId) PlanId   
-,ISNULL(PA.OfferAttributeID ,OA.ID)  OfferAttributeID  
-,ISNULL(OA.DisplayName,'''')DisplayName  
-,ISNULL(OA.Type,'''')Type  
-,ISNULL(VT.ValueType,'''') ValueType  
-,ISnull(OA.DisplaySequence,0)DisplaySequence  
-,isnull(PA.IsEnabled,0) IsEnabled  
-,isnull(OA.IsRequired,0) IsRequired  
-,ISNULL(Value,'''')Value  
-,ISNULL(SubscriptionId,@SubscriptionId) SubscriptionId  
-,ISNULL(SAV.OfferID,OA.OfferId) OfferID  
-,SAV.UserId  
-,SAV.CreateDate  
-,ISNULL(oA.FromList,0) FromList  
-,ISNULL(OA.ValuesList,'''') ValuesList  
-,ISNULL(OA.Max,0) Max  
-,ISNULL(OA.Min,0) Min
-,ISNULL(VT.HTMLType,'''') HTMLType  
-from   
-[dbo].[OfferAttributes] OA  
-Inner  join   
-[dbo].[PlanAttributeMapping]  PA  
-on OA.ID= PA.OfferAttributeID and OA.OfferId=@OfferId  
-  
-and  PA.PlanId=@PlanId  
-Left Join   
-SubscriptionAttributeValues SAV  
-on SAV.PlanAttributeId= PA.PlanAttributeId  
-and SAV.SubscriptionId=@SubscriptionId  
-  
-inner join ValueTypes VT  
-ON OA.ValueTypeId=VT.ValueTypeId  
-  
-where    
-OA.Isactive=1   
-and PA.IsEnabled=1  
-END
-')");
-
-            migrationBuilder.Sql(@"
-/*   
-Exec spGetPlanEvents 'B8F4D276-15EB-4EB6-89D4-E600FF1098EF'  
-*/
-EXEC(N'
-CREATE Procedure [dbo].[spGetPlanEvents]  
-(  
-@PlanId Uniqueidentifier  
-)  
-AS  
-BEGIN  
-   
-Declare @OfferId Uniqueidentifier   
---Set @OfferId=(Select OfferId from Plans where PlanGuId =@PlanId )  
---isnull(PlanAttributeId,ID),ParameterId,DisplayName,DisplaySequence,isnull(IsEnabled,0)  
-  
-SELECT    
- Cast(ROW_NUMBER() OVER ( ORDER BY E.EventsId)  as Int) RowNumber  
- ,ISNULL(OEM.Id,0)  Id  
-,ISNULL(OEM.PlanId,@PlanId) PlanId  
---,OEM.ARMTemplateId  
-,ISNULL(OEM.Isactive,0) Isactive  
-,ISNULL(OEM.CopyToCustomer,0) CopyToCustomer
-,ISNULL(OEM.SuccessStateEmails,'''')SuccessStateEmails  
-,ISNULL(OEM.FailureStateEmails,'''')FailureStateEmails  
-,E.EventsId as EventId  
-  
-,E.EventsName  
-from Events  E  
-left  join   
-PlanEventsMapping  OEM  
-on  
-E.EventsId= OEM.EventId and  OEM.PlanId= @PlanId  
-where    
-E.Isactive=1   
-  
-END
-')");
-
-            migrationBuilder.Sql(@"
-/*   
-Exec spGetOfferParameters 'B8F4D276-15EB-4EB6-89D4-E600FF1098EF'  
-*/  
-EXEC(N'
-CREATE Procedure [dbo].[spGetOfferParameters]  
-(  
-@PlanId Uniqueidentifier  
-)  
-AS  
-BEGIN  
-   
-Declare @OfferId Uniqueidentifier   
-Set @OfferId=(Select OfferId from Plans where PlanGuId =@PlanId )  
-SELECT    
-  Cast( ROW_NUMBER() OVER ( ORDER BY OA.ID) as Int)RowNumber  
-,isnull(PA.PlanAttributeId,0) PlanAttributeId  
-,ISNULL(PA.PlanId,@PlanId) PlanId   
-,ISNULL(PA.OfferAttributeID ,OA.ID)  OfferAttributeID  
-  
-,OA.DisplayName  
---,OA.DisplaySequence  
-,isnull(PA.IsEnabled,0) IsEnabled  
-,OA.Type
-from [dbo].[OfferAttributes] OA  
-left  join   
-[dbo].[PlanAttributeMapping]  PA  
-on OA.ID= PA.OfferAttributeID and OA.OfferId=@OfferId  
-and  PA.PlanId=@PlanId  
-where    
-OA.Isactive=1   
-  
-END
-')");
-
-            migrationBuilder.Sql(@"
-EXEC(N'
-    Create Procedure [dbo].[spGetFormattedEmailBody]  
-    (  
-    @subscriptionId varchar(225),  
-    @processStatus varchar(225)   
-    )  
-  
-    /*  
-    EXEC spGetFormattedEmailBody ''86C334EC-5973-D337-7B2B-0D676513B0F9'',''success''
-    */  
-  
-    AS  
-    BEGIN  
-    declare @html varchar(max)   
-  
-    DECLARE   
-      @planId varchar(225)  
-    , @planGUId varchar(225)  
-    , @planName varchar(225)  
-    , @offerId varchar(225)  
-    , @offerGUId varchar(225)  
-    , @subscriptionStatus varchar(225)  
-    , @subscriptionName varchar(225)  
-    , @offerName varchar(225)  
-    , @customerName  varchar(225)  
-    , @customerEmailAddress  varchar(225)  
-    , @purchaserEmial  varchar(225)  
-    , @purchaserTenant  varchar(225)  
-    , @UserId int  
-  
-    Declare @applicationName Varchar(225) =(select [value] from [ApplicationConfiguration] where [Name]=''ApplicationName'')  
-    Declare @welcomeText varchar(MAX)=''''  
-  
-  
-    IF EXISTS (SELECT 1 FROM SUBSCRIPTIONS WHERE AMPSubscriptionId=@subscriptionId)  
-    BEGIN  
-     select  @planId =AMPPLanId,  
-     @subscriptionStatus =subscriptionstatus,  
-     @subscriptionName= [Name],  
-     @purchaserEmial=PurchaserEmail,  
-     @purchaserTenant=PurchaserTenantId,  
-     @UserId = UserId  
-     FROM SUBSCRIPTIONS WHERE AMPSubscriptionId=@subscriptionId  
-   
-      select   
-     @customerName =FullName,  
-     @customerEmailAddress= EmailAddress  
-     FROM USERS WHERE USERID=@UserId  
-  
-  
-     IF EXISTS (SELECT 1 FROM PLANS WHERE PLANID=@planId)  
-     BEGIN  
-      SELECT @offerGUId = OFFERID,  
-        @planName= DISPLAYNAME,  
-        @planGUId=PlanGUID  
-       FROM PLANS WHERE  PLANID=@planId  
-    
-      IF EXISTS (SELECT 1 FROM OFFERS WHERE OFFERGUID=@offerGUId)  
-      BEGIN  
-       Select @offerId = OFFERID ,  
-         @offerName=OFFERNAME   
-       FROM OFFERS WHERE  OFFERGUID=@offerGUId  
-      END  
-     END  
-    END  
-  
-    Create Table #Temp(HtmlLabel varchar(max), HtmlValue varchar(max))  
-    Insert into #Temp  
-  
-    select ''Customer Email Address'',@customerEmailAddress   UNION ALL  
-    select ''Customer Name'',@customerName       UNION ALL  
-    select ''SaaS Subscription Id'',@subscriptionId     UNION ALL  
-    select ''SaaS Subscription Name'',@subscriptionName    UNION ALL  
-    select ''SaaS Subscription Status'',@subscriptionStatus   UNION ALL  
-    select ''Plan'',@planName           UNION ALL  
-    select ''Purchaser Email Address'',@customerEmailAddress   UNION ALL  
-    select ''Purchaser Tenant'',@purchaserTenant      UNION ALL     
-    -- Parameters  
-    select   
-    ISNULL(OA.DisplayName,'''') DisplayName, ISNULL(Value,'''')Value      
-    from      [dbo].[OfferAttributes] OA      
-    Inner  join       
-    [dbo].[PlanAttributeMapping]  PA      
-    on OA.ID= PA.OfferAttributeID and OA.OfferId=@OfferguId      
-    and  PA.PlanId=@PlanguId      
-    INNER Join  SubscriptionAttributeValues SAV      
-    on SAV.PlanAttributeId= PA.PlanAttributeId      
-    and SAV.SubscriptionId=@SubscriptionId      
-    where OA.Isactive=1   and PA.IsEnabled=1    
-  
-  
-    -- Cursor Begin  
-    Declare @subscriptionContent VARCHAR(MAX)=''''  
-  
-    DECLARE   
-        @htmlLabel VARCHAR(MAX),   
-        @htmlValue   VARCHAR(MAX)  
-  
-    DECLARE cursor_html CURSOR  
-    FOR SELECT   
-            htmlLabel,   
-            HtmlValue  
-        FROM   
-            #Temp  
-  
-    OPEN cursor_html;  
-  
-    FETCH NEXT FROM cursor_html INTO   
-        @htmlLabel,   
-        @htmlValue;  
-  
-    WHILE @@FETCH_STATUS = 0  
-        BEGIN  
-         
-        set @subscriptionContent = @subscriptionContent + ''<tr><td><b>''+ @htmlLabel+''</b></td> <td>'' + @htmlValue + ''</td> </tr>''  
-  
-            FETCH NEXT FROM cursor_html INTO   
-                @htmlLabel,   
-        @htmlValue;  
-        END;  
-  
-    CLOSE cursor_html;  
-  
-    DEALLOCATE cursor_html;  
-  
-    -- Cursor End  
-  
-    -- Welcome text  
-  
-    IF (@processStatus =''failure'')  
-     BEGIN  
-      set @welcomeText= ''Your request for the subscription has been failed.''  
-      set @html = (SELECT TemplateBody FROM EmailTemplate WHERE Status = ''Failed'')
-     END  
-  
-    IF (@processStatus =''success'')   
-     BEGIN  
-     IF (@subscriptionStatus= ''PendingActivation'')  
-        BEGIN  
-      set @welcomeText= ''A request for purchase with the following details is awaiting your action for activation.''  
-       END  
-     IF (@subscriptionStatus= ''Subscribed'')  
-        BEGIN  
-      set @welcomeText= ''Your request for the purchase has been approved.''  
-       END  
-     IF (@subscriptionStatus= ''Unsubscribed'')  
-        BEGIN  
-      set @welcomeText= ''A subscription with the following details was deleted from Azure.''  
-       END   
-         set @html = (SELECT TemplateBody FROM EmailTemplate WHERE Status = @subscriptionStatus)
-    END  
- 
-     select  @html=REPLACE(@html,''${subscriptiondetails}'',@subscriptionContent)  
-      ,@html=REPLACE(@html,''${welcometext}'',@welcomeText)  
-      ,@html=REPLACE(@html,''${ApplicationName}'',@applicationName)  
-   
-  
-     select 1 AS ID,''Email'' AS [Name], @html as [Value]  
-  
-  
-    /* test values  
-     --select @subscriptionContent  
-     -- select * from #Temp  
-  
-    SELECT   
-      @subscriptionId    as ''subscriptionId''  
-    , @processStatus    as ''processStatus''  
-    , @planId       as ''planId''  
-    , @offerId       as ''offerId''  
-    , @offerGUId      as ''offerGUId''  
-    , @subscriptionStatus    as ''subscriptionStatus''  
-    , @subscriptionName    as ''subscriptionName''  
-    , @planName      as ''planName''  
-    , @offerName      as ''offerName''  
-    , @customerName      as ''customerName''  
-    , @customerEmailAddress   as ''customerEmailAddress''  
-    , @purchaserEmial      as ''purchaserEmial''  
-    , @purchaserTenant     as ''purchaserTenant''  
-    , @UserId       as ''UserId''  
-    , @applicationName    as ''applicationName''  
-    , @welcomeText     as ''welcomeText''  
-    , @tablehtml     as ''tablehtml''  
-    */  
-  
-    End
-')");
+            PostgresStoredProcedures.Seed(migrationBuilder);
         }
 
         public static void BaselineV2_SeedData(this MigrationBuilder migrationBuilder)
@@ -366,7 +43,7 @@ VALUES
 
             migrationBuilder.Sql(@$"
 INSERT INTO ApplicationConfiguration
-	([Name],[Value],[Description])
+	("Name","Value","Description")
 VALUES
     ('SMTPFromEmail','','SMTP Email'),
 	('SMTPPassword','','SMTP Password'),
@@ -382,27 +59,21 @@ VALUES
 ");
             
             migrationBuilder.Sql(@$"
-IF NOT EXISTS (SELECT * FROM ApplicationConfiguration WHERE Name = 'AcceptSubscriptionUpdates')
-BEGIN
-    INSERT INTO ApplicationConfiguration (Name,Value,Description)
-    VALUES ('AcceptSubscriptionUpdates','false','Accepts subscriptions plan or quantity updates')
-END
-GO
-IF NOT EXISTS (SELECT * FROM ApplicationConfiguration WHERE Name = 'LogoFile')
-BEGIN
-    INSERT INTO ApplicationConfiguration (Name,Value,Description)
-    VALUES ('LogoFile','','Logo File')
-END
-GO
-IF NOT EXISTS (SELECT * FROM ApplicationConfiguration WHERE Name = 'FaviconFile')
-BEGIN
-    INSERT INTO ApplicationConfiguration (Name,Value,Description)
-    VALUES ('FaviconFile','','Favicon File')
-END
-GO");
+INSERT INTO ""ApplicationConfiguration"" (""Name"",""Value"",""Description"")
+SELECT 'AcceptSubscriptionUpdates', 'false', 'Accepts subscriptions plan or quantity updates'
+WHERE NOT EXISTS (SELECT 1 FROM ""ApplicationConfiguration"" WHERE ""Name"" = 'AcceptSubscriptionUpdates');
+
+INSERT INTO ""ApplicationConfiguration"" (""Name"",""Value"",""Description"")
+SELECT 'LogoFile', '', 'Logo File'
+WHERE NOT EXISTS (SELECT 1 FROM ""ApplicationConfiguration"" WHERE ""Name"" = 'LogoFile');
+
+INSERT INTO ""ApplicationConfiguration"" (""Name"",""Value"",""Description"")
+SELECT 'FaviconFile', '', 'Favicon File'
+WHERE NOT EXISTS (SELECT 1 FROM ""ApplicationConfiguration"" WHERE ""Name"" = 'FaviconFile');
+");
             migrationBuilder.Sql(@$"
-INSERT INTO EmailTemplate
-	([Status],[Description],[InsertDate],[TemplateBody],[Subject],[IsActive])
+INSERT INTO ""EmailTemplate""
+	(""Status"",""Description"",""InsertDate"",""TemplateBody"",""Subject"",""IsActive"")
 VALUES
     ('Failed','Failed','{seedDate}', '{FAILED_EMAIL_TEMPLATE}','Failed',1),
 	('PendingActivation','Pending Activation','{seedDate}', '{PENDINGACTIVATION_EMAIL_TEMPLATE}','Pending Activation',1),
@@ -437,7 +108,7 @@ VALUES
                                  <td valign=""top"" class=""headerContent"">                                              <img src=""https://raw.githubusercontent.com/Azure/Commercial-Marketplace-SaaS-Accelerator/main/src/CustomerSite/wwwroot/contoso-sales.png"" style=""max-width: 300px; display: block; margin-left: auto; margin-right: auto; padding-top:10px;padding-bottom:10px;"" id=""headerImage"" />                                          </td>
                               </tr>
                            </table>
-                           <!-- // END HEADER -->                              
+                           <!-- //  HEADER -->                              
                         </td>
                      </tr>
                      <tr>
@@ -452,7 +123,7 @@ VALUES
                                                                           ${subscriptiondetails}   
                                                                                                               </table>
                                     <p style="" margin-left: auto; margin-right: auto; text-align:right;"">                                                  <a href=""https://saaskitdemoapp.azurewebsites.net/"">                                                      <button style=""background-color:#2168A6;line-height:30px;color:white""><b>View Details</b></button>                                                  </a>                                              </p>
-                                    <!--     CTA button -->                                              <!--<table style=""background: #0078D7;"" cellspacing=""0"" cellpadding=""0"" align=""left"">                                                  <tbody>                                                      <tr>                                                          <td style=""padding-left: 15px; font-size: 18px; line-height: 20px; font-family:""Segoe UI Light""; color: #ffffff;"">                                                              <a style=""text-decoration: none; font-size: 18px; line-height: 20px; font-family:""Segoe UI Light""; color: #ffffff;"" href=""${LinkToPortal}/#/login"">${LoginButtonTextInEmail}</a>                                                          </td>                                                          <td style=""line-height: 1px; font-size: 1px; padding: 10px;"">                                                              <a>                                                                  <img src=""https://info.microsoft.com/rs/157-GQE-382/images/Program-CTAButton-whiteltr.png"" border=""0"" alt="""" height=""20"" />                                                              </a>                                                          </td>                                                      </tr>                                                  </tbody>                                              </table>-->                                              <!--     end CTA button -->                                          
+                                    <!--     CTA button -->                                              <!--<table style=""background: #0078D7;"" cellspacing=""0"" cellpadding=""0"" align=""left"">                                                  <tbody>                                                      <tr>                                                          <td style=""padding-left: 15px; font-size: 18px; line-height: 20px; font-family:""Segoe UI Light""; color: #ffffff;"">                                                              <a style=""text-decoration: none; font-size: 18px; line-height: 20px; font-family:""Segoe UI Light""; color: #ffffff;"" href=""${LinkToPortal}/#/login"">${LoginButtonTextInEmail}</a>                                                          </td>                                                          <td style=""line-height: 1px; font-size: 1px; padding: 10px;"">                                                              <a>                                                                  <img src=""https://info.microsoft.com/rs/157-GQE-382/images/Program-CTAButton-whiteltr.png"" border=""0"" alt="""" height=""20"" />                                                              </a>                                                          </td>                                                      </tr>                                                  </tbody>                                              </table>-->                                              <!--      CTA button -->                                          
                                  </td>
                               </tr>
                      <tr>
@@ -461,17 +132,17 @@ VALUES
                            <table border=""0"" cellpadding=""0"" cellspacing=""0"" width=""100%"" id=""templatePreheader"">
                               <tr>
                                  <td valign=""top"" class=""preheaderContent"" style=""padding-top: 10px; padding-right: 20px; padding-bottom: 10px; padding-left: 20px;"">                                              You are receiving this message because of an interaction with                                              <a href=""https://saaskitdemoapp.azurewebsites.net/"">Contoso</a>.                                              Please contact us at <a href=""https://saaskitdemoapp.azurewebsites.net/"">Contoso</a>                                              in case you think you have received this message in error or need help.                                          </td>
-                                 <!-- *|IFNOT:ARCHIVE_PAGE|* -->                                                      <!-- *|END:IF|* -->                                      
+                                 <!-- *|IFNOT:ARCHIVE_PAGE|* -->                                                      <!-- *|:IF|* -->                                      
                               </tr>
                            </table>
-                           <!-- // END PREHEADER -->                              
+                           <!-- //  PREHEADER -->                              
                         </td>
                      </tr>
                   </table>
                </td>
             </tr>
          </table>
-         <!-- // END BODY -->          </td>          </tr>          </table>           <!-- // END TEMPLATE -->      
+         <!-- //  BODY -->          </td>          </tr>          </table>           <!-- //  TEMPLATE -->      
       </center>
    </body>
 </html>";
@@ -500,7 +171,7 @@ VALUES
                                  <td valign=""top"" class=""headerContent"">                                              <img src=""https://raw.githubusercontent.com/Azure/Commercial-Marketplace-SaaS-Accelerator/main/src/CustomerSite/wwwroot/contoso-sales.png"" style=""max-width: 300px; display: block; margin-left: auto; margin-right: auto; padding-top:10px;padding-bottom:10px;"" id=""headerImage"" />                                          </td>
                               </tr>
                            </table>
-                           <!-- // END HEADER -->                              
+                           <!-- //  HEADER -->                              
                         </td>
                      </tr>
                      <tr>
@@ -515,7 +186,7 @@ VALUES
                                                                           ${subscriptiondetails}   
                                                                                                               </table>
                                     <p style="" margin-left: auto; margin-right: auto; text-align:right;"">                                                  <a href=""https://saaskitdemoapp.azurewebsites.net/"">                                                      <button style=""background-color:#2168A6;line-height:30px;color:white""><b>View Details</b></button>                                                  </a>                                              </p>
-                                    <!--     CTA button -->                                              <!--<table style=""background: #0078D7;"" cellspacing=""0"" cellpadding=""0"" align=""left"">                                                  <tbody>                                                      <tr>                                                          <td style=""padding-left: 15px; font-size: 18px; line-height: 20px; font-family:""Segoe UI Light""; color: #ffffff;"">                                                              <a style=""text-decoration: none; font-size: 18px; line-height: 20px; font-family:""Segoe UI Light""; color: #ffffff;"" href=""${LinkToPortal}/#/login"">${LoginButtonTextInEmail}</a>                                                          </td>                                                          <td style=""line-height: 1px; font-size: 1px; padding: 10px;"">                                                              <a>                                                                  <img src=""https://info.microsoft.com/rs/157-GQE-382/images/Program-CTAButton-whiteltr.png"" border=""0"" alt="""" height=""20"" />                                                              </a>                                                          </td>                                                      </tr>                                                  </tbody>                                              </table>-->                                              <!--     end CTA button -->                                          
+                                    <!--     CTA button -->                                              <!--<table style=""background: #0078D7;"" cellspacing=""0"" cellpadding=""0"" align=""left"">                                                  <tbody>                                                      <tr>                                                          <td style=""padding-left: 15px; font-size: 18px; line-height: 20px; font-family:""Segoe UI Light""; color: #ffffff;"">                                                              <a style=""text-decoration: none; font-size: 18px; line-height: 20px; font-family:""Segoe UI Light""; color: #ffffff;"" href=""${LinkToPortal}/#/login"">${LoginButtonTextInEmail}</a>                                                          </td>                                                          <td style=""line-height: 1px; font-size: 1px; padding: 10px;"">                                                              <a>                                                                  <img src=""https://info.microsoft.com/rs/157-GQE-382/images/Program-CTAButton-whiteltr.png"" border=""0"" alt="""" height=""20"" />                                                              </a>                                                          </td>                                                      </tr>                                                  </tbody>                                              </table>-->                                              <!--      CTA button -->                                          
                                  </td>
                               </tr>
                      <tr>
@@ -524,17 +195,17 @@ VALUES
                            <table border=""0"" cellpadding=""0"" cellspacing=""0"" width=""100%"" id=""templatePreheader"">
                               <tr>
                                  <td valign=""top"" class=""preheaderContent"" style=""padding-top: 10px; padding-right: 20px; padding-bottom: 10px; padding-left: 20px;"">                                              You are receiving this message because of an interaction with                                              <a href=""https://saaskitdemoapp.azurewebsites.net/"">Contoso</a>.                                              Please contact us at <a href=""https://saaskitdemoapp.azurewebsites.net/"">Contoso</a>                                              in case you think you have received this message in error or need help.                                          </td>
-                                 <!-- *|IFNOT:ARCHIVE_PAGE|* -->                                                      <!-- *|END:IF|* -->                                      
+                                 <!-- *|IFNOT:ARCHIVE_PAGE|* -->                                                      <!-- *|:IF|* -->                                      
                               </tr>
                            </table>
-                           <!-- // END PREHEADER -->                              
+                           <!-- //  PREHEADER -->                              
                         </td>
                      </tr>
                   </table>
                </td>
             </tr>
          </table>
-         <!-- // END BODY -->          </td>          </tr>          </table>           <!-- // END TEMPLATE -->      
+         <!-- //  BODY -->          </td>          </tr>          </table>           <!-- //  TEMPLATE -->      
       </center>
    </body>
 </html>
@@ -564,7 +235,7 @@ VALUES
                                  <td valign=""top"" class=""headerContent"">                                              <img src=""https://raw.githubusercontent.com/Azure/Commercial-Marketplace-SaaS-Accelerator/main/src/CustomerSite/wwwroot/contoso-sales.png"" style=""max-width: 300px; display: block; margin-left: auto; margin-right: auto; padding-top:10px;padding-bottom:10px;"" id=""headerImage"" />                                          </td>
                               </tr>
                            </table>
-                           <!-- // END HEADER -->                              
+                           <!-- //  HEADER -->                              
                         </td>
                      </tr>
                      <tr>
@@ -579,7 +250,7 @@ VALUES
                                                                           ${subscriptiondetails}   
                                                                                                               </table>
                                     <p style="" margin-left: auto; margin-right: auto; text-align:right;"">                                                  <a href=""https://saaskitdemoapp.azurewebsites.net/"">                                                      <button style=""background-color:#2168A6;line-height:30px;color:white""><b>View Details</b></button>                                                  </a>                                              </p>
-                                    <!--     CTA button -->                                              <!--<table style=""background: #0078D7;"" cellspacing=""0"" cellpadding=""0"" align=""left"">                                                  <tbody>                                                      <tr>                                                          <td style=""padding-left: 15px; font-size: 18px; line-height: 20px; font-family:""Segoe UI Light""; color: #ffffff;"">                                                              <a style=""text-decoration: none; font-size: 18px; line-height: 20px; font-family:""Segoe UI Light""; color: #ffffff;"" href=""${LinkToPortal}/#/login"">${LoginButtonTextInEmail}</a>                                                          </td>                                                          <td style=""line-height: 1px; font-size: 1px; padding: 10px;"">                                                              <a>                                                                  <img src=""https://info.microsoft.com/rs/157-GQE-382/images/Program-CTAButton-whiteltr.png"" border=""0"" alt="""" height=""20"" />                                                              </a>                                                          </td>                                                      </tr>                                                  </tbody>                                              </table>-->                                              <!--     end CTA button -->                                          
+                                    <!--     CTA button -->                                              <!--<table style=""background: #0078D7;"" cellspacing=""0"" cellpadding=""0"" align=""left"">                                                  <tbody>                                                      <tr>                                                          <td style=""padding-left: 15px; font-size: 18px; line-height: 20px; font-family:""Segoe UI Light""; color: #ffffff;"">                                                              <a style=""text-decoration: none; font-size: 18px; line-height: 20px; font-family:""Segoe UI Light""; color: #ffffff;"" href=""${LinkToPortal}/#/login"">${LoginButtonTextInEmail}</a>                                                          </td>                                                          <td style=""line-height: 1px; font-size: 1px; padding: 10px;"">                                                              <a>                                                                  <img src=""https://info.microsoft.com/rs/157-GQE-382/images/Program-CTAButton-whiteltr.png"" border=""0"" alt="""" height=""20"" />                                                              </a>                                                          </td>                                                      </tr>                                                  </tbody>                                              </table>-->                                              <!--      CTA button -->                                          
                                  </td>
                               </tr>
                      <tr>
@@ -588,17 +259,17 @@ VALUES
                            <table border=""0"" cellpadding=""0"" cellspacing=""0"" width=""100%"" id=""templatePreheader"">
                               <tr>
                                  <td valign=""top"" class=""preheaderContent"" style=""padding-top: 10px; padding-right: 20px; padding-bottom: 10px; padding-left: 20px;"">                                              You are receiving this message because of an interaction with                                              <a href=""https://saaskitdemoapp.azurewebsites.net/"">Contoso</a>.                                              Please contact us at <a href=""https://saaskitdemoapp.azurewebsites.net/"">Contoso</a>                                              in case you think you have received this message in error or need help.                                          </td>
-                                 <!-- *|IFNOT:ARCHIVE_PAGE|* -->                                                      <!-- *|END:IF|* -->                                      
+                                 <!-- *|IFNOT:ARCHIVE_PAGE|* -->                                                      <!-- *|:IF|* -->                                      
                               </tr>
                            </table>
-                           <!-- // END PREHEADER -->                              
+                           <!-- //  PREHEADER -->                              
                         </td>
                      </tr>
                   </table>
                </td>
             </tr>
          </table>
-         <!-- // END BODY -->          </td>          </tr>          </table>           <!-- // END TEMPLATE -->      
+         <!-- //  BODY -->          </td>          </tr>          </table>           <!-- //  TEMPLATE -->      
       </center>
    </body>
 </html>
@@ -628,7 +299,7 @@ VALUES
                                  <td valign=""top"" class=""headerContent"">                                              <img src=""https://raw.githubusercontent.com/Azure/Commercial-Marketplace-SaaS-Accelerator/main/src/CustomerSite/wwwroot/contoso-sales.png"" style=""max-width: 300px; display: block; margin-left: auto; margin-right: auto; padding-top:10px;padding-bottom:10px;"" id=""headerImage"" />                                          </td>
                               </tr>
                            </table>
-                           <!-- // END HEADER -->                              
+                           <!-- //  HEADER -->                              
                         </td>
                      </tr>
                      <tr>
@@ -643,7 +314,7 @@ VALUES
                                                                           ${subscriptiondetails}   
                                                                                                               </table>
                                     <p style="" margin-left: auto; margin-right: auto; text-align:right;"">                                                  <a href=""https://saaskitdemoapp.azurewebsites.net/"">                                                      <button style=""background-color:#2168A6;line-height:30px;color:white""><b>View Details</b></button>                                                  </a>                                              </p>
-                                    <!--     CTA button -->                                              <!--<table style=""background: #0078D7;"" cellspacing=""0"" cellpadding=""0"" align=""left"">                                                  <tbody>                                                      <tr>                                                          <td style=""padding-left: 15px; font-size: 18px; line-height: 20px; font-family:""Segoe UI Light""; color: #ffffff;"">                                                              <a style=""text-decoration: none; font-size: 18px; line-height: 20px; font-family:""Segoe UI Light""; color: #ffffff;"" href=""${LinkToPortal}/#/login"">${LoginButtonTextInEmail}</a>                                                          </td>                                                          <td style=""line-height: 1px; font-size: 1px; padding: 10px;"">                                                              <a>                                                                  <img src=""https://info.microsoft.com/rs/157-GQE-382/images/Program-CTAButton-whiteltr.png"" border=""0"" alt="""" height=""20"" />                                                              </a>                                                          </td>                                                      </tr>                                                  </tbody>                                              </table>-->                                              <!--     end CTA button -->                                          
+                                    <!--     CTA button -->                                              <!--<table style=""background: #0078D7;"" cellspacing=""0"" cellpadding=""0"" align=""left"">                                                  <tbody>                                                      <tr>                                                          <td style=""padding-left: 15px; font-size: 18px; line-height: 20px; font-family:""Segoe UI Light""; color: #ffffff;"">                                                              <a style=""text-decoration: none; font-size: 18px; line-height: 20px; font-family:""Segoe UI Light""; color: #ffffff;"" href=""${LinkToPortal}/#/login"">${LoginButtonTextInEmail}</a>                                                          </td>                                                          <td style=""line-height: 1px; font-size: 1px; padding: 10px;"">                                                              <a>                                                                  <img src=""https://info.microsoft.com/rs/157-GQE-382/images/Program-CTAButton-whiteltr.png"" border=""0"" alt="""" height=""20"" />                                                              </a>                                                          </td>                                                      </tr>                                                  </tbody>                                              </table>-->                                              <!--      CTA button -->                                          
                                  </td>
                               </tr>
                      <tr>
@@ -652,17 +323,17 @@ VALUES
                            <table border=""0"" cellpadding=""0"" cellspacing=""0"" width=""100%"" id=""templatePreheader"">
                               <tr>
                                  <td valign=""top"" class=""preheaderContent"" style=""padding-top: 10px; padding-right: 20px; padding-bottom: 10px; padding-left: 20px;"">                                              You are receiving this message because of an interaction with                                              <a href=""https://saaskitdemoapp.azurewebsites.net/"">Contoso</a>.                                              Please contact us at <a href=""https://saaskitdemoapp.azurewebsites.net/"">Contoso</a>                                              in case you think you have received this message in error or need help.                                          </td>
-                                 <!-- *|IFNOT:ARCHIVE_PAGE|* -->                                                      <!-- *|END:IF|* -->                                      
+                                 <!-- *|IFNOT:ARCHIVE_PAGE|* -->                                                      <!-- *|:IF|* -->                                      
                               </tr>
                            </table>
-                           <!-- // END PREHEADER -->                              
+                           <!-- //  PREHEADER -->                              
                         </td>
                      </tr>
                   </table>
                </td>
             </tr>
          </table>
-         <!-- // END BODY -->          </td>          </tr>          </table>           <!-- // END TEMPLATE -->      
+         <!-- //  BODY -->          </td>          </tr>          </table>           <!-- //  TEMPLATE -->      
       </center>
    </body>
 </html>

@@ -45,7 +45,7 @@ class Program
         var versionInfo = new AppVersionService(Assembly.GetExecutingAssembly()?.GetName()?.Version);
 
         var services = new ServiceCollection()
-            .AddDbContext<SaasKitContext>(options => options.UseSqlServer(configuration.GetConnectionString("DefaultConnection")), ServiceLifetime.Transient)
+            .AddDbContext<SaasKitContext>(options => options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")), ServiceLifetime.Transient)
             .AddScoped<ISchedulerFrequencyRepository, SchedulerFrequencyRepository>()
             .AddScoped<IMeteredPlanSchedulerManagementRepository, MeteredPlanSchedulerManagementRepository>()
             .AddScoped<ISchedulerManagerViewRepository, SchedulerManagerViewRepository>()

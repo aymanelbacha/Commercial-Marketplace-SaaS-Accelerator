@@ -1,0 +1,53 @@
+#cloud-config
+package_update: true
+packages:
+  - gnupg
+  - lsb-release
+  - curl
+
+write_files:
+  - path: /tmp/install-postgres.sh
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      PG_VERSION=16
+      DB_NAME="__DB_NAME__"
+      DB_USER="__DB_USER__"
+      DB_PASSWORD="__DB_PASSWORD__"
+      VNET_CIDR="__VNET_CIDR__"
+
+      install -d /usr/share/postgresql-common/pgdg
+      curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg
+      echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list
+      apt-get update
+      DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql-${PG_VERSION}
+
+      PG_CONF="/etc/postgresql/${PG_VERSION}/main/postgresql.conf"
+      PG_HBA="/etc/postgresql/${PG_VERSION}/main/pg_hba.conf"
+
+      sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/" "$PG_CONF"
+      sed -i "s/^#ssl = on/ssl = on/" "$PG_CONF" || echo "ssl = on" >> "$PG_CONF"
+
+      if ! grep -q "${VNET_CIDR}" "$PG_HBA"; then
+        echo "hostssl all all ${VNET_CIDR} scram-sha-256" >> "$PG_HBA"
+        echo "host all all ${VNET_CIDR} scram-sha-256" >> "$PG_HBA"
+        echo "host all all 127.0.0.1/32 scram-sha-256" >> "$PG_HBA"
+      fi
+
+      systemctl restart postgresql
+
+      sudo -u postgres psql -v ON_ERROR_STOP=1 <<EOSQL
+      CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';
+      CREATE DATABASE "${DB_NAME}" OWNER ${DB_USER};
+      GRANT ALL PRIVILEGES ON DATABASE "${DB_NAME}" TO ${DB_USER};
+      \c "${DB_NAME}"
+      GRANT ALL ON SCHEMA public TO ${DB_USER};
+      ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO ${DB_USER};
+      ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO ${DB_USER};
+      CREATE EXTENSION IF NOT EXISTS pgcrypto;
+      EOSQL
+
+runcmd:
+  - /tmp/install-postgres.sh
+  - rm -f /tmp/install-postgres.sh

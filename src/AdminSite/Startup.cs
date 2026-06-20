@@ -148,7 +148,7 @@ public class Startup
             .AddScoped<ApplicationConfigService>();
 
         services
-            .AddDbContext<SaasKitContext>(options => options.UseSqlServer(this.Configuration.GetConnectionString("DefaultConnection")));
+            .AddDbContext<SaasKitContext>(options => options.UseNpgsql(this.Configuration.GetConnectionString("DefaultConnection")));
 
 
         InitializeRepositoryServices(services);

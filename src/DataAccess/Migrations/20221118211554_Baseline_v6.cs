@@ -12,7 +12,7 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
             migrationBuilder.AddColumn<string>(
                 name: "RunBy",
                 table: "MeteredAuditLogs",
-                type: "varchar(255)",
+                type: "character varying(255)",
                 unicode: false,
                 maxLength: 255,
                 nullable: true);

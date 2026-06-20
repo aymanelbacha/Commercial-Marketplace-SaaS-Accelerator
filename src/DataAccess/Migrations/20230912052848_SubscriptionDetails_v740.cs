@@ -12,25 +12,25 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
             migrationBuilder.AddColumn<string>(
                 name: "AmpOfferId",
                 table: "Subscriptions",
-                type: "nvarchar(max)",
+                type: "text",
                 nullable: true);
 
             migrationBuilder.AddColumn<DateTime>(
                 name: "EndDate",
                 table: "Subscriptions",
-                type: "datetime2",
+                type: "timestamp without time zone",
                 nullable: true);
 
             migrationBuilder.AddColumn<DateTime>(
                 name: "StartDate",
                 table: "Subscriptions",
-                type: "datetime2",
+                type: "timestamp without time zone",
                 nullable: true);
 
             migrationBuilder.AddColumn<string>(
                 name: "Term",
                 table: "Subscriptions",
-                type: "nvarchar(max)",
+                type: "text",
                 nullable: true);
         }
 

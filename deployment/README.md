@@ -1,8 +1,8 @@
-# Transactable SaaS SDK Database
+# Transactable SaaS SDK Database (PostgreSQL)
 
 ## Introduction
 
-The customer portal and the publisher portal sample web applications use SQL Server database as the data source to store marketplace subscriptions and the status, metered dimensions by plans, and activity against subscriptions.
+The customer portal and the publisher portal sample web applications use **PostgreSQL 16** on a **private Linux VM** inside the deployment VNet. Subscription data, metered dimensions, and activity are stored in PostgreSQL.
 
 ## Install Using SQL Scripts
 

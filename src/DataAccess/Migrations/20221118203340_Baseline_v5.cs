@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
+using System;
 using Marketplace.SaaS.Accelerator.DataAccess.Migrations.Custom;
 using Microsoft.EntityFrameworkCore.Migrations;
 
@@ -15,8 +16,8 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    Frequency = table.Column<string>(type: "varchar(50)", unicode: false, maxLength: 50, nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    Frequency = table.Column<string>(type: "character varying(50)", unicode: false, maxLength: 50, nullable: false)
                 },
                 constraints: table =>
                 {
@@ -28,15 +29,15 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    SchedulerName = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    SchedulerName = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
                     SubscriptionId = table.Column<int>(type: "int", nullable: false),
                     PlanId = table.Column<int>(type: "int", nullable: false),
                     DimensionId = table.Column<int>(type: "int", nullable: false),
                     FrequencyId = table.Column<int>(type: "int", nullable: false),
-                    Quantity = table.Column<double>(type: "float", nullable: false),
-                    StartDate = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    NextRunTime = table.Column<DateTime>(type: "datetime2", nullable: true)
+                    Quantity = table.Column<double>(type: "double precision", nullable: false),
+                    StartDate = table.Column<DateTime>(type: "timestamp without time zone", nullable: false),
+                    NextRunTime = table.Column<DateTime>(type: "timestamp without time zone", nullable: true)
                 },
                 constraints: table =>
                 {

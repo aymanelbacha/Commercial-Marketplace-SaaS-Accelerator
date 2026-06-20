@@ -214,7 +214,7 @@ public class PlansRepository : IPlansRepository
     /// <returns> List type="of Plan attributes.</returns>
     public IEnumerable<PlanAttributesModel> GetPlanAttributes(Guid planGuId, Guid offerId)
     {
-        var offerAttributescCall = this.context.PlanAttributeOutput.FromSqlRaw("dbo.spGetOfferParameters {0}", planGuId);
+        var offerAttributescCall = this.context.PlanAttributeOutput.FromSqlRaw("SELECT * FROM sp_get_offer_parameters({0})", planGuId);
         var offerAttributes = offerAttributescCall.ToList();
 
         List<PlanAttributesModel> attributesList = new List<PlanAttributesModel>();
@@ -246,7 +246,7 @@ public class PlansRepository : IPlansRepository
     /// <returns> Plan Events Model.</returns>
     public IEnumerable<PlanEventsModel> GetEventsByPlan(Guid planGuId, Guid offerId)
     {
-        var allEvents = this.context.PlanEventsOutPut.FromSqlRaw("dbo.spGetPlanEvents {0}", planGuId).ToList();
+        var allEvents = this.context.PlanEventsOutPut.FromSqlRaw("SELECT * FROM sp_get_plan_events({0})", planGuId).ToList();
 
         List<PlanEventsModel> eventsList = new List<PlanEventsModel>();
 
