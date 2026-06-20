@@ -33,6 +33,18 @@ az account set -s $AzureSubscriptionID
 Write-Host "🔑 Azure Subscription '$AzureSubscriptionID' selected."
 
 $ErrorActionPreference = "Stop"
+$DeployScriptRoot = if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
+    $PSScriptRoot
+} else {
+    Split-Path -Parent $MyInvocation.MyCommand.Path
+}
+$DeployTempDir = if (-not [string]::IsNullOrWhiteSpace($env:TEMP)) {
+    $env:TEMP
+} elseif (-not [string]::IsNullOrWhiteSpace($env:TMPDIR)) {
+    $env:TMPDIR
+} else {
+    [System.IO.Path]::GetTempPath().TrimEnd([char]'/', [char]'\')
+}
 $WebAppNameAdmin=$WebAppNamePrefix+"-admin"
 $WebAppNamePortal=$WebAppNamePrefix+"-portal"
 $KeyVault=$WebAppNamePrefix+"-kv"
@@ -68,8 +80,8 @@ CREATE TABLE IF NOT EXISTS ""__EFMigrationsHistory"" (
 "@
 
 Write-host "## STEP 1.4 Apply compatibility script on PostgreSQL VM"
-. "$PSScriptRoot/postgres/Invoke-PostgresMigration.ps1"
-$compatPath = Join-Path $env:TEMP "saas-compat.sql"
+. (Join-Path $DeployScriptRoot "postgres/Invoke-PostgresMigration.ps1")
+$compatPath = Join-Path $DeployTempDir "saas-compat.sql"
 Set-Content -Path $compatPath -Value $compatibilityScript -Encoding UTF8
 Invoke-PostgresMigration `
     -ResourceGroup $ResourceGroupForDeployment `

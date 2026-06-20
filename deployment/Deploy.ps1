@@ -127,6 +127,20 @@ Write-Host "🔑 Azure Subscription '$AzureSubscriptionID' selected."
 
 #region Set up Variables and Default Parameters
 
+# Linux pwsh often does not set $env:TEMP; $PSScriptRoot can be empty when dot-sourced.
+$DeployScriptRoot = if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
+    $PSScriptRoot
+} else {
+    Split-Path -Parent $MyInvocation.MyCommand.Path
+}
+$DeployTempDir = if (-not [string]::IsNullOrWhiteSpace($env:TEMP)) {
+    $env:TEMP
+} elseif (-not [string]::IsNullOrWhiteSpace($env:TMPDIR)) {
+    $env:TMPDIR
+} else {
+    [System.IO.Path]::GetTempPath().TrimEnd([char]'/', [char]'\')
+}
+
 if ($ResourceGroupForDeployment -eq "") {
     $ResourceGroupForDeployment = $WebAppNamePrefix 
 }
@@ -515,9 +529,13 @@ az network nsg rule create --resource-group $ResourceGroupForDeployment --nsg-na
 az network vnet subnet update --resource-group $ResourceGroupForDeployment --vnet-name $VnetName --name $SqlSubnetName --network-security-group $PostgresNsgName --output $azCliOutput
 
 Write-host "      ➡️ Create private PostgreSQL 16 Linux VM in sql subnet"
-$cloudInitTemplate = Get-Content -Path "$PSScriptRoot/postgres/cloud-init.yaml" -Raw
+$cloudInitTemplatePath = Join-Path $DeployScriptRoot "postgres/cloud-init.yaml"
+if (-not (Test-Path $cloudInitTemplatePath)) {
+    throw "cloud-init template not found: $cloudInitTemplatePath"
+}
+$cloudInitTemplate = Get-Content -Path $cloudInitTemplatePath -Raw
 $cloudInit = $cloudInitTemplate.Replace("__DB_NAME__", $SQLDatabaseName).Replace("__DB_USER__", $PostgresAdminUser).Replace("__DB_PASSWORD__", $PostgresAdminPassword).Replace("__VNET_CIDR__", $VnetCidr)
-$cloudInitPath = Join-Path $env:TEMP "$SQLServerName-cloud-init.yaml"
+$cloudInitPath = Join-Path $DeployTempDir "$SQLServerName-cloud-init.yaml"
 Set-Content -Path $cloudInitPath -Value $cloudInit -Encoding UTF8
 az vm create `
     --resource-group $ResourceGroupForDeployment `
@@ -596,7 +614,7 @@ $ConnectionString=$Connection
 Set-Content -Path ../src/AdminSite/appsettings.Development.json -value "{`"ConnectionStrings`": {`"DefaultConnection`":`"$ConnectionString`"}}"
 dotnet-ef migrations script  --output script.sql --idempotent --context SaaSKitContext --project ../src/DataAccess/DataAccess.csproj --startup-project ../src/AdminSite/AdminSite.csproj
 Write-host "      ➡️ Execute PostgreSQL schema/data script on private VM"
-. "$PSScriptRoot/postgres/Invoke-PostgresMigration.ps1"
+. (Join-Path $DeployScriptRoot "postgres/Invoke-PostgresMigration.ps1")
 Invoke-PostgresMigration `
     -ResourceGroup $ResourceGroupForDeployment `
     -VmName $SQLServerName `
