@@ -4,6 +4,7 @@ packages:
   - gnupg
   - lsb-release
   - curl
+  - ca-certificates
 
 write_files:
   - path: /tmp/install-postgres.sh
@@ -16,12 +17,32 @@ write_files:
       DB_USER="__DB_USER__"
       DB_PASSWORD="__DB_PASSWORD__"
       VNET_CIDR="__VNET_CIDR__"
+      LOG="/var/log/saas-postgres-install.log"
 
+      exec > >(tee -a "$LOG") 2>&1
+      echo "=== SaaS Accelerator PostgreSQL bootstrap started $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
+
+      retry() {
+        local max_attempts="$1"
+        shift
+        local attempt=1
+        until "$@"; do
+          if [ "$attempt" -ge "$max_attempts" ]; then
+            echo "Command failed after ${max_attempts} attempts: $*"
+            return 1
+          fi
+          echo "Retry ${attempt}/${max_attempts}: $*"
+          attempt=$((attempt + 1))
+          sleep 10
+        done
+      }
+
+      retry 5 curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg
       install -d /usr/share/postgresql-common/pgdg
-      curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg
       echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list
-      apt-get update
-      DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql-${PG_VERSION}
+
+      retry 5 apt-get update
+      DEBIAN_FRONTEND=noninteractive retry 3 apt-get install -y postgresql-${PG_VERSION}
 
       PG_CONF="/etc/postgresql/${PG_VERSION}/main/postgresql.conf"
       PG_HBA="/etc/postgresql/${PG_VERSION}/main/pg_hba.conf"
@@ -35,11 +56,21 @@ write_files:
         echo "host all all 127.0.0.1/32 scram-sha-256" >> "$PG_HBA"
       fi
 
+      systemctl enable postgresql
       systemctl restart postgresql
 
       sudo -u postgres psql -v ON_ERROR_STOP=1 <<EOSQL
-      CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';
-      CREATE DATABASE "${DB_NAME}" OWNER ${DB_USER};
+      DO \$\$
+      BEGIN
+        IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${DB_USER}') THEN
+          CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';
+        ELSE
+          ALTER USER ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';
+        END IF;
+      END
+      \$\$;
+      SELECT 'CREATE DATABASE "${DB_NAME}" OWNER ${DB_USER}'
+      WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '${DB_NAME}')\gexec
       GRANT ALL PRIVILEGES ON DATABASE "${DB_NAME}" TO ${DB_USER};
       \c "${DB_NAME}"
       GRANT ALL ON SCHEMA public TO ${DB_USER};
@@ -47,6 +78,8 @@ write_files:
       ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO ${DB_USER};
       CREATE EXTENSION IF NOT EXISTS pgcrypto;
       EOSQL
+
+      echo "=== SaaS Accelerator PostgreSQL bootstrap finished $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
 
 runcmd:
   - /tmp/install-postgres.sh

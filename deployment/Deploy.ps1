@@ -27,6 +27,8 @@ Param(
    [string][Parameter()]$LogoURLpng,  # URL for Publisher .png logo
    [string][Parameter()]$LogoURLico,  # URL for Publisher .ico logo
    [string][Parameter()]$KeyVault, # Name of KeyVault
+   [switch][Parameter()]$EnableKeyVaultPrivateEndpoint, # Optional hardened Key Vault private endpoint (off by default for reliability)
+   [switch][Parameter()]$SkipBuild, # Skip dotnet publish if packages already built
    [switch][Parameter()]$Quiet #if set, only show error / warning output from script commands
 )
 
@@ -92,47 +94,17 @@ Write-Host "🔑 Azure Subscription '$AzureSubscriptionID' selected."
 
 $ErrorActionPreference = "Stop"
 $startTime = Get-Date
-#region Select Tenant / Subscription for deployment
 
-$currentContext = az account show | ConvertFrom-Json
-$currentTenant = $currentContext.tenantId
-$currentSubscription = $currentContext.id
-
-#Get TenantID if not set as argument
-if(!($TenantID)) {    
-    Get-AzTenant | Format-Table
-    if (!($TenantID = Read-Host "⌨  Type your TenantID or press Enter to accept your current one [$currentTenant]")) { $TenantID = $currentTenant }    
-}
-else {
-    Write-Host "🔑 Tenant provided: $TenantID"
-}
-
-#Get Azure Subscription if not set as argument
-if(!($AzureSubscriptionID)) {    
-    Get-AzSubscription -TenantId $TenantID | Format-Table
-    if (!($AzureSubscriptionID = Read-Host "⌨  Type your SubscriptionID or press Enter to accept your current one [$currentSubscription]")) { $AzureSubscriptionID = $currentSubscription }
-}
-else {
-    Write-Host "🔑 Azure Subscription provided: $AzureSubscriptionID"
-}
-
-#Set the AZ Cli context
-az account set -s $AzureSubscriptionID
-Write-Host "🔑 Azure Subscription '$AzureSubscriptionID' selected."
-
-#endregion
-
-
-
-
-#region Set up Variables and Default Parameters
-
-# Linux pwsh often does not set $env:TEMP; $PSScriptRoot can be empty when dot-sourced.
 $DeployScriptRoot = if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
     $PSScriptRoot
 } else {
     Split-Path -Parent $MyInvocation.MyCommand.Path
 }
+. (Join-Path $DeployScriptRoot "scripts/Deploy-Helpers.ps1")
+
+#region Set up Variables and Default Parameters
+
+# Linux pwsh often does not set $env:TEMP; paths are resolved from the deployment folder.
 $DeployTempDir = if (-not [string]::IsNullOrWhiteSpace($env:TEMP)) {
     $env:TEMP
 } elseif (-not [string]::IsNullOrWhiteSpace($env:TMPDIR)) {
@@ -140,6 +112,14 @@ $DeployTempDir = if (-not [string]::IsNullOrWhiteSpace($env:TEMP)) {
 } else {
     [System.IO.Path]::GetTempPath().TrimEnd([char]'/', [char]'\')
 }
+$RepoRoot = Join-Path $DeployScriptRoot ".."
+$PublishRoot = Join-Path $RepoRoot "Publish"
+$AdminPublishDir = Join-Path $PublishRoot "AdminSite"
+$PortalPublishDir = Join-Path $PublishRoot "CustomerSite"
+$AdminZipPath = Join-Path $PublishRoot "AdminSite.zip"
+$PortalZipPath = Join-Path $PublishRoot "CustomerSite.zip"
+$MigrationScriptPath = Join-Path $DeployScriptRoot "script.sql"
+$DevAppSettingsPath = Join-Path $RepoRoot "src/AdminSite/appsettings.Development.json"
 
 if ($ResourceGroupForDeployment -eq "") {
     $ResourceGroupForDeployment = $WebAppNamePrefix 
@@ -187,7 +167,10 @@ if($KeyVault -eq "")
 
 }
 
-$SaaSApiConfiguration_CodeHash= git log --format='%H' -1
+$SaaSApiConfiguration_CodeHash = try { git -C $RepoRoot log --format='%H' -1 2>$null } catch { $null }
+if ([string]::IsNullOrWhiteSpace($SaaSApiConfiguration_CodeHash)) {
+    $SaaSApiConfiguration_CodeHash = "unknown"
+}
 $azCliOutput = if($Quiet){'none'} else {'json'}
 
 #endregion
@@ -204,19 +187,27 @@ if(!($KeyVault -match "^[a-zA-Z][a-z0-9-]+$")) {
     exit 1
 }
 
+if ($ADApplicationID -and -not $ADApplicationSecret) {
+    Throw "🛑 ADApplicationSecret is required when ADApplicationID is provided."
+    exit 1
+}
+
 
 #endregion 
 
 #region pre-checks
 
-# check if dotnet 8 is installed
+if (-not (Get-Command az -ErrorAction SilentlyContinue)) {
+    Throw "🛑 Azure CLI (az) is not installed or not on PATH."
+}
 
 $dotnetversion = dotnet --version
-
 if(!$dotnetversion.StartsWith('8.')) {
-    Throw "🛑 Dotnet 8 not installed. Install dotnet8 and re-run the script."
-    Exit
+    Throw "🛑 Dotnet 8 not installed. Install dotnet 8 SDK and re-run the script."
 }
+
+Ensure-DotNetEfTool
+Test-SolutionBuild -RepoRoot $RepoRoot
 
 #endregion
 
@@ -244,8 +235,8 @@ if ($vm_exists)
 if($LogoURLpng) { 
     Write-Host "📷 Logo image provided"
 	Write-Host "   🔵 Downloading Logo image file"
-    Invoke-WebRequest -Uri $LogoURLpng -OutFile "../src/CustomerSite/wwwroot/contoso-sales.png"
-    Invoke-WebRequest -Uri $LogoURLpng -OutFile "../src/AdminSite/wwwroot/contoso-sales.png"
+    Invoke-WebRequest -Uri $LogoURLpng -OutFile (Join-Path $RepoRoot "src/CustomerSite/wwwroot/contoso-sales.png")
+    Invoke-WebRequest -Uri $LogoURLpng -OutFile (Join-Path $RepoRoot "src/AdminSite/wwwroot/contoso-sales.png")
     Write-Host "   🔵 Logo image downloaded"
 }
 
@@ -253,8 +244,8 @@ if($LogoURLpng) {
 if($LogoURLico) { 
     Write-Host "📷 Logo icon provided"
 	Write-Host "   🔵 Downloading Logo icon file"
-    Invoke-WebRequest -Uri $LogoURLico -OutFile "../src/CustomerSite/wwwroot/favicon.ico"
-    Invoke-WebRequest -Uri $LogoURLico -OutFile "../src/AdminSite/wwwroot/favicon.ico"
+    Invoke-WebRequest -Uri $LogoURLico -OutFile (Join-Path $RepoRoot "src/CustomerSite/wwwroot/favicon.ico")
+    Invoke-WebRequest -Uri $LogoURLico -OutFile (Join-Path $RepoRoot "src/AdminSite/wwwroot/favicon.ico")
     Write-Host "   🔵 Logo icon downloaded"
 }
 
@@ -308,7 +299,7 @@ if (!($ADApplicationID)) {
     }
     catch [System.Net.WebException],[System.IO.IOException] {
         Write-Host "🚨🚨   $PSItem.Exception"
-        break;
+        exit 1
     }
 }
 
@@ -386,7 +377,7 @@ if (!($ADApplicationIDAdmin)) {
     }
     catch [System.Net.WebException],[System.IO.IOException] {
         Write-Host "🚨🚨   $PSItem.Exception"
-        break;
+        exit 1
     }
 }
 
@@ -463,7 +454,7 @@ if (!($ADMTApplicationIDPortal)) {
     }
     catch [System.Net.WebException],[System.IO.IOException] {
         Write-Host "🚨🚨   $PSItem.Exception"
-        break;
+        exit 1
     }
 }
 
@@ -471,19 +462,16 @@ if (!($ADMTApplicationIDPortal)) {
 
 #region Prepare Code Packages
 Write-host "📜 Prepare publish files for the application"
-if (!(Test-Path '../Publish')) {		
-	Write-host "   🔵 Preparing Admin Site"  
-	dotnet publish ../src/AdminSite/AdminSite.csproj -c release -o ../Publish/AdminSite/ -v q
-
-	Write-host "   🔵 Preparing Metered Scheduler"
-	dotnet publish ../src/MeteredTriggerJob/MeteredTriggerJob.csproj -c release -o ../Publish/AdminSite/app_data/jobs/triggered/MeteredTriggerJob/ -v q --runtime win-x64 --self-contained true 
-
-	Write-host "   🔵 Preparing Customer Site"
-	dotnet publish ../src/CustomerSite/CustomerSite.csproj -c release -o ../Publish/CustomerSite/ -v q
-
-	Write-host "   🔵 Zipping packages"
-	Compress-Archive -Path ../Publish/AdminSite/* -DestinationPath ../Publish/AdminSite.zip -Force
-	Compress-Archive -Path ../Publish/CustomerSite/* -DestinationPath ../Publish/CustomerSite.zip -Force
+if (-not $SkipBuild) {
+    Build-PublishPackages `
+        -RepoRoot $RepoRoot `
+        -PublishRoot $PublishRoot `
+        -AdminPublishDir $AdminPublishDir `
+        -PortalPublishDir $PortalPublishDir `
+        -AdminZipPath $AdminZipPath `
+        -PortalZipPath $PortalZipPath
+} elseif (-not (Test-Path $AdminZipPath) -or -not (Test-Path $PortalZipPath)) {
+    throw "SkipBuild was set but publish packages were not found. Remove -SkipBuild or build Publish/*.zip first."
 }
 #endregion
 
@@ -526,6 +514,8 @@ az network vnet subnet create --resource-group $ResourceGroupForDeployment --vne
 Write-host "      ➡️ Create PostgreSQL VM network security group (private-only)"
 az network nsg create --resource-group $ResourceGroupForDeployment --name $PostgresNsgName --location $Location --output $azCliOutput
 az network nsg rule create --resource-group $ResourceGroupForDeployment --nsg-name $PostgresNsgName -n AllowPostgresFromWeb --priority 100 --direction Inbound --access Allow --protocol Tcp --source-address-prefixes $WebSubnetCidr --source-port-ranges "*" --destination-address-prefixes "*" --destination-port-ranges 5432 --output $azCliOutput
+az network nsg rule create --resource-group $ResourceGroupForDeployment --nsg-name $PostgresNsgName -n AllowOutboundHttps --priority 110 --direction Outbound --access Allow --protocol Tcp --source-address-prefixes "*" --source-port-ranges "*" --destination-address-prefixes "Internet" --destination-port-ranges 443 --output $azCliOutput
+az network nsg rule create --resource-group $ResourceGroupForDeployment --nsg-name $PostgresNsgName -n AllowOutboundHttp --priority 120 --direction Outbound --access Allow --protocol Tcp --source-address-prefixes "*" --source-port-ranges "*" --destination-address-prefixes "Internet" --destination-port-ranges 80 --output $azCliOutput
 az network vnet subnet update --resource-group $ResourceGroupForDeployment --vnet-name $VnetName --name $SqlSubnetName --network-security-group $PostgresNsgName --output $azCliOutput
 
 Write-host "      ➡️ Create private PostgreSQL 16 Linux VM in sql subnet"
@@ -554,7 +544,13 @@ az vm create `
 Remove-Item -Path $cloudInitPath -Force -ErrorAction SilentlyContinue
 
 Write-host "      ➡️ Wait for PostgreSQL bootstrap on VM"
-Start-Sleep -Seconds 120
+. (Join-Path $DeployScriptRoot "postgres/Wait-PostgresReady.ps1")
+Wait-PostgresReady `
+    -ResourceGroup $ResourceGroupForDeployment `
+    -VmName $SQLServerName `
+    -DatabaseUser $PostgresAdminUser `
+    -DatabasePassword $PostgresAdminPassword `
+    -DatabaseName $SQLDatabaseName
 
 $PostgresPrivateIp = az vm list-ip-addresses --resource-group $ResourceGroupForDeployment --name $SQLServerName --query "[0].virtualMachine.network.privateIpAddresses[0]" -o tsv
 if ([string]::IsNullOrWhiteSpace($PostgresPrivateIp)) {
@@ -603,6 +599,10 @@ az webapp config connection-string set -g $ResourceGroupForDeployment -n $WebApp
 az webapp config appsettings set -g $ResourceGroupForDeployment  -n $WebAppNamePortal --output $azCliOutput --settings SaaSApiConfiguration__AdAuthenticationEndPoint=https://login.microsoftonline.com SaaSApiConfiguration__ClientId=$ADApplicationID SaaSApiConfiguration__ClientSecret=$ADApplicationSecretKeyVault SaaSApiConfiguration__FulFillmentAPIBaseURL=https://marketplaceapi.microsoft.com/api SaaSApiConfiguration__FulFillmentAPIVersion=2018-08-31 SaaSApiConfiguration__GrantType=client_credentials SaaSApiConfiguration__MTClientId=$ADMTApplicationIDPortal SaaSApiConfiguration__Resource=20e940b3-4c77-4b0b-9a53-9e16a1b010a7 SaaSApiConfiguration__TenantId=$TenantID SaaSApiConfiguration__SignedOutRedirectUri=https://$WebAppNamePrefix-portal.azurewebsites.net/Home/Index/ SaaSApiConfiguration_CodeHash=$SaaSApiConfiguration_CodeHash
 az webapp config set -g $ResourceGroupForDeployment -n $WebAppNamePortal --always-on true --output $azCliOutput
 
+Write-host "   🔵 Integrate WebApps with VNet (required for Key Vault + private PostgreSQL)"
+Add-WebAppVnetIntegration -ResourceGroup $ResourceGroupForDeployment -WebAppName $WebAppNamePortal -VnetName $VnetName -SubnetName $WebSubnetName -AzCliOutput $azCliOutput
+Add-WebAppVnetIntegration -ResourceGroup $ResourceGroupForDeployment -WebAppName $WebAppNameAdmin -VnetName $VnetName -SubnetName $WebSubnetName -AzCliOutput $azCliOutput
+
 #endregion
 
 #region Deploy Code
@@ -611,8 +611,19 @@ Write-host "📜 Deploy Code"
 Write-host "   🔵 Deploy Database"
 Write-host "      ➡️ Generate PostgreSQL schema/data script"
 $ConnectionString=$Connection
-Set-Content -Path ../src/AdminSite/appsettings.Development.json -value "{`"ConnectionStrings`": {`"DefaultConnection`":`"$ConnectionString`"}}"
-dotnet-ef migrations script  --output script.sql --idempotent --context SaaSKitContext --project ../src/DataAccess/DataAccess.csproj --startup-project ../src/AdminSite/AdminSite.csproj
+Set-Content -Path $DevAppSettingsPath -value "{`"ConnectionStrings`": {`"DefaultConnection`":`"$ConnectionString`"}}"
+dotnet ef migrations script --output $MigrationScriptPath --idempotent --context SaaSKitContext --project (Join-Path $RepoRoot "src/DataAccess/DataAccess.csproj") --startup-project (Join-Path $RepoRoot "src/AdminSite/AdminSite.csproj")
+
+Write-host "      ➡️ Apply EF migrations history compatibility script"
+Invoke-PostgresCompatibilityMigration `
+    -DeployScriptRoot $DeployScriptRoot `
+    -DeployTempDir $DeployTempDir `
+    -ResourceGroup $ResourceGroupForDeployment `
+    -VmName $SQLServerName `
+    -DatabaseName $SQLDatabaseName `
+    -DatabaseUser $PostgresAdminUser `
+    -DatabasePassword $PostgresAdminPassword
+
 Write-host "      ➡️ Execute PostgreSQL schema/data script on private VM"
 . (Join-Path $DeployScriptRoot "postgres/Invoke-PostgresMigration.ps1")
 Invoke-PostgresMigration `
@@ -621,40 +632,50 @@ Invoke-PostgresMigration `
     -DatabaseName $SQLDatabaseName `
     -DatabaseUser $PostgresAdminUser `
     -DatabasePassword $PostgresAdminPassword `
-    -ScriptPath "./script.sql"
+    -ScriptPath $MigrationScriptPath
 
 Write-host "   🔵 Deploy Code to Admin Portal"
-az webapp deploy --resource-group $ResourceGroupForDeployment --name $WebAppNameAdmin --src-path "../Publish/AdminSite.zip" --type zip --output $azCliOutput
+if (-not (Test-Path $AdminZipPath)) {
+    throw "Admin publish package not found: $AdminZipPath"
+}
+az webapp deploy --resource-group $ResourceGroupForDeployment --name $WebAppNameAdmin --src-path $AdminZipPath --type zip --output $azCliOutput
 
 Write-host "   🔵 Deploy Code to Customer Portal"
-az webapp deploy --resource-group $ResourceGroupForDeployment --name $WebAppNamePortal --src-path "../Publish/CustomerSite.zip" --type zip --output $azCliOutput
+if (-not (Test-Path $PortalZipPath)) {
+    throw "Customer publish package not found: $PortalZipPath"
+}
+az webapp deploy --resource-group $ResourceGroupForDeployment --name $WebAppNamePortal --src-path $PortalZipPath --type zip --output $azCliOutput
 
-Write-host "   🔵 Update VNet integration for WebApps"
-az webapp vnet-integration add --resource-group $ResourceGroupForDeployment --name $WebAppNamePortal --vnet $VnetName --subnet $WebSubnetName --output $azCliOutput
-az webapp vnet-integration add --resource-group $ResourceGroupForDeployment --name $WebAppNameAdmin --vnet $VnetName --subnet $WebSubnetName --output $azCliOutput
+Write-host "   🔵 Restart WebApps"
+az webapp restart -g $ResourceGroupForDeployment -n $WebAppNameAdmin --output $azCliOutput
+az webapp restart -g $ResourceGroupForDeployment -n $WebAppNamePortal --output $azCliOutput
+
+Write-host "   🔵 Verify deployed applications"
+Test-WebAppDeploymentHealth -WebAppName $WebAppNamePortal
+Test-WebAppDeploymentHealth -WebAppName $WebAppNameAdmin
 
 Write-host "   🔵 Clean up"
-Remove-Item -Path ../src/AdminSite/appsettings.Development.json
-Remove-Item -Path script.sql
-#Remove-Item -Path ../Publish -recurse -Force
+Remove-Item -Path $DevAppSettingsPath -ErrorAction SilentlyContinue
+Remove-Item -Path $MigrationScriptPath -ErrorAction SilentlyContinue
+#Remove-Item -Path $PublishRoot -recurse -Force
 
 #endregion
 
 #region Create KV Private Endpoints
-# Get KV Server
-$keyVaultId=az keyvault show --name $KeyVault --resource-group $ResourceGroupForDeployment --query id -o tsv
-
-# Create a KV private endpoint
-az network private-endpoint create --name $privateKvEndpointName --resource-group $ResourceGroupForDeployment --vnet-name $vnetName --subnet $KvSubnetName --private-connection-resource-id $keyVaultId --group-ids vault  --connection-name kvConnection
-
-
-# Create a KV private DNS zone
-az network private-dns zone create --name $privateKvDnsZoneName --resource-group $ResourceGroupForDeployment
-
-# Link the KV private DNS zone to the VNet
-az network private-dns link vnet create --name $privateKvLink --resource-group $ResourceGroupForDeployment --virtual-network $vnetName --zone-name $privateKvDnsZoneName --registration-enabled false
-
-az network private-endpoint dns-zone-group create --resource-group $ResourceGroupForDeployment --endpoint-name $privateKvEndpointName --name "Kv-zone-group"   --private-dns-zone $privateKvDnsZoneName   --zone-name "Kv-zone"
+if ($EnableKeyVaultPrivateEndpoint) {
+    Install-KeyVaultPrivateEndpoint `
+        -ResourceGroup $ResourceGroupForDeployment `
+        -KeyVault $KeyVault `
+        -VnetName $VnetName `
+        -KvSubnetName $KvSubnetName `
+        -PrivateKvEndpointName $privateKvEndpointName `
+        -PrivateKvDnsZoneName $privateKvDnsZoneName `
+        -PrivateKvLink $privateKvlink `
+        -AzCliOutput $azCliOutput
+} else {
+    Write-Host "   🔵 Skipping Key Vault private endpoint (default). Apps use public Key Vault endpoint with VNet subnet access."
+    Write-Host "      ➡️ Re-run with -EnableKeyVaultPrivateEndpoint to add private endpoint hardening later."
+}
 #endregion
 
 

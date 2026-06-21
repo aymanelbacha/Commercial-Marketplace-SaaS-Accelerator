@@ -10,11 +10,16 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-if (-not (Test-Path $ScriptPath)) {
+$resolvedScriptPath = Resolve-Path -Path $ScriptPath
+if (-not (Test-Path $resolvedScriptPath)) {
     throw "Migration script not found: $ScriptPath"
 }
 
-$sql = Get-Content -Path $ScriptPath -Raw -Encoding UTF8
+$sql = Get-Content -Path $resolvedScriptPath -Raw -Encoding UTF8
+if ([string]::IsNullOrWhiteSpace($sql)) {
+    throw "Migration script is empty: $resolvedScriptPath"
+}
+
 $sqlB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($sql))
 $escapedPassword = $DatabasePassword.Replace("'", "'\''")
 
@@ -27,11 +32,22 @@ rm -f /tmp/saas-migrate.sql
 "@
 
 Write-Host "      ➡️ Applying database migration on VM $VmName via Run Command..."
-az vm run-command invoke `
+$result = az vm run-command invoke `
     --resource-group $ResourceGroup `
     --name $VmName `
     --command-id RunShellScript `
     --scripts $remoteScript `
-    --output none
+    --output json | ConvertFrom-Json
+
+$stdout = $result.value[0].message
+$stderr = $result.value[0].stderr
+if ($stdout) { Write-Host $stdout }
+if ($stderr -and $stderr -notmatch '^\s*$') {
+    Write-Host $stderr -ForegroundColor Yellow
+}
+
+if ($stderr -match 'ERROR:|FATAL:|psql:.* error:') {
+    throw "Database migration failed on VM '$VmName'. See output above."
+}
 
 Write-Host "      ✅ Database migration applied." -ForegroundColor Green

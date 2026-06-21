@@ -7,7 +7,8 @@
 
 Param(  
    [string][Parameter(Mandatory)]$WebAppNamePrefix,
-   [string][Parameter(Mandatory)]$ResourceGroupForDeployment
+   [string][Parameter(Mandatory)]$ResourceGroupForDeployment,
+   [switch][Parameter()]$SkipBuild
 )
 
 $message = @"
@@ -27,11 +28,6 @@ if ($response -ne 'Y' -and $response -ne 'y') {
 
 Write-Host "Thank you for agreeing. Proceeding with the script..." -ForegroundColor Green
 
-$currentContext = az account show | ConvertFrom-Json
-$AzureSubscriptionID = $currentContext.id
-az account set -s $AzureSubscriptionID
-Write-Host "🔑 Azure Subscription '$AzureSubscriptionID' selected."
-
 $ErrorActionPreference = "Stop"
 $DeployScriptRoot = if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
     $PSScriptRoot
@@ -45,109 +41,141 @@ $DeployTempDir = if (-not [string]::IsNullOrWhiteSpace($env:TEMP)) {
 } else {
     [System.IO.Path]::GetTempPath().TrimEnd([char]'/', [char]'\')
 }
-$WebAppNameAdmin=$WebAppNamePrefix+"-admin"
-$WebAppNamePortal=$WebAppNamePrefix+"-portal"
-$KeyVault=$WebAppNamePrefix+"-kv"
-$SQLDatabaseName = $WebAppNamePrefix +"AMPSaaSDB"
+$RepoRoot = Join-Path $DeployScriptRoot ".."
+$PublishRoot = Join-Path $RepoRoot "Publish"
+$AdminPublishDir = Join-Path $PublishRoot "AdminSite"
+$PortalPublishDir = Join-Path $PublishRoot "CustomerSite"
+$AdminZipPath = Join-Path $PublishRoot "AdminSite.zip"
+$PortalZipPath = Join-Path $PublishRoot "CustomerSite.zip"
+$MigrationScriptPath = Join-Path $DeployScriptRoot "script.sql"
+$DevAppSettingsPath = Join-Path $RepoRoot "src/AdminSite/appsettings.Development.json"
+
+. (Join-Path $DeployScriptRoot "scripts/Deploy-Helpers.ps1")
+
+$currentContext = az account show | ConvertFrom-Json
+$AzureSubscriptionID = $currentContext.id
+az account set -s $AzureSubscriptionID
+Write-Host "🔑 Azure Subscription '$AzureSubscriptionID' selected."
+
+$WebAppNameAdmin = $WebAppNamePrefix + "-admin"
+$WebAppNamePortal = $WebAppNamePrefix + "-portal"
+$VnetName = $WebAppNamePrefix + "-vnet"
+$KeyVault = $WebAppNamePrefix + "-kv"
+$SQLDatabaseName = $WebAppNamePrefix + "AMPSaaSDB"
 $PostgresVmName = $WebAppNamePrefix + "-pgvm"
 $PostgresAdminUser = "saasadmin"
 
+Ensure-DotNetEfTool
+if (-not $SkipBuild) {
+    Test-SolutionBuild -RepoRoot $RepoRoot
+}
+
 #region Deploy Database
 
-Write-host "#### STEP 1 Database deployment start####"
+Write-Host "#### STEP 1 Database deployment start ####"
 
-Write-host "## STEP 1.1 Retrieve connection string and VM credentials from Key Vault"
-$ConnectionString = az keyvault secret show --vault-name $KeyVault --name "DefaultConnection" --query value -o tsv
-$PostgresAdminPassword = az keyvault secret show --vault-name $KeyVault --name "PostgresAdminPassword" --query value -o tsv
+Write-Host "## STEP 1.1 Retrieve connection string and VM credentials from Key Vault"
+$ConnectionString = Get-KeyVaultSecretValue -KeyVault $KeyVault -SecretName "DefaultConnection" -ResourceGroup $ResourceGroupForDeployment
+$PostgresAdminPassword = Get-KeyVaultSecretValue -KeyVault $KeyVault -SecretName "PostgresAdminPassword" -ResourceGroup $ResourceGroupForDeployment
 
-Write-host "## STEP 1.2 Update connection string in AdminSite project"
-Set-Content -Path ../src/AdminSite/appsettings.Development.json -value "{`"ConnectionStrings`": {`"DefaultConnection`":`"$ConnectionString`"}}"
+if ([string]::IsNullOrWhiteSpace($ConnectionString)) {
+    throw "DefaultConnection secret is empty or unavailable in Key Vault '$KeyVault'."
+}
+if ([string]::IsNullOrWhiteSpace($PostgresAdminPassword)) {
+    throw "PostgresAdminPassword secret is empty or unavailable in Key Vault '$KeyVault'."
+}
 
-Write-host "## STEP 1.3 Generate PostgreSQL migration script"
-dotnet-ef migrations script `
+Write-Host "## STEP 1.2 Update connection string in AdminSite project"
+Set-Content -Path $DevAppSettingsPath -Value "{`"ConnectionStrings`": {`"DefaultConnection`":`"$ConnectionString`"}}"
+
+Write-Host "## STEP 1.3 Generate PostgreSQL migration script"
+dotnet ef migrations script `
     --idempotent `
     --context SaaSKitContext `
-    --project ../src/DataAccess/DataAccess.csproj `
-    --startup-project ../src/AdminSite/AdminSite.csproj `
-    --output script.sql
+    --project (Join-Path $RepoRoot "src/DataAccess/DataAccess.csproj") `
+    --startup-project (Join-Path $RepoRoot "src/AdminSite/AdminSite.csproj") `
+    --output $MigrationScriptPath
 
-$compatibilityScript = @"
-CREATE TABLE IF NOT EXISTS ""__EFMigrationsHistory"" (
-    ""MigrationId"" character varying(150) NOT NULL,
-    ""ProductVersion"" character varying(32) NOT NULL,
-    CONSTRAINT ""PK___EFMigrationsHistory"" PRIMARY KEY (""MigrationId"")
-);
-"@
+Write-Host "## STEP 1.4 Apply compatibility script on PostgreSQL VM"
+Invoke-PostgresCompatibilityMigration `
+    -DeployScriptRoot $DeployScriptRoot `
+    -DeployTempDir $DeployTempDir `
+    -ResourceGroup $ResourceGroupForDeployment `
+    -VmName $PostgresVmName `
+    -DatabaseName $SQLDatabaseName `
+    -DatabaseUser $PostgresAdminUser `
+    -DatabasePassword $PostgresAdminPassword
 
-Write-host "## STEP 1.4 Apply compatibility script on PostgreSQL VM"
+Write-Host "## STEP 1.5 Apply migration script on PostgreSQL VM"
 . (Join-Path $DeployScriptRoot "postgres/Invoke-PostgresMigration.ps1")
-$compatPath = Join-Path $DeployTempDir "saas-compat.sql"
-Set-Content -Path $compatPath -Value $compatibilityScript -Encoding UTF8
 Invoke-PostgresMigration `
     -ResourceGroup $ResourceGroupForDeployment `
     -VmName $PostgresVmName `
     -DatabaseName $SQLDatabaseName `
     -DatabaseUser $PostgresAdminUser `
     -DatabasePassword $PostgresAdminPassword `
-    -ScriptPath $compatPath
-Remove-Item $compatPath -Force
+    -ScriptPath $MigrationScriptPath
 
-Write-host "## STEP 1.5 Apply migration script on PostgreSQL VM"
-Invoke-PostgresMigration `
-    -ResourceGroup $ResourceGroupForDeployment `
-    -VmName $PostgresVmName `
-    -DatabaseName $SQLDatabaseName `
-    -DatabaseUser $PostgresAdminUser `
-    -DatabasePassword $PostgresAdminPassword `
-    -ScriptPath "./script.sql"
+Remove-Item -Path $DevAppSettingsPath -ErrorAction SilentlyContinue
+Remove-Item -Path $MigrationScriptPath -ErrorAction SilentlyContinue
 
-Remove-Item -Path ../src/AdminSite/appsettings.Development.json
-Remove-Item -Path script.sql
-
-Write-host "#### Database Deployment complete ####"	
+Write-Host "#### Database Deployment complete ####"
 
 #endregion Deploy Database
 
 #region Deploy code
 
-Write-host "#### STEP 2 Deploying new code ####" 
+Write-Host "#### STEP 2 Deploying new code ####"
 
-Write-host "## STEP 2.1 Building Admin Portal" 
-dotnet publish ../src/AdminSite/AdminSite.csproj -v q -c release -o ../Publish/AdminSite/
+Write-Host "## STEP 2.1 Ensure VNet integration"
+Add-WebAppVnetIntegration -ResourceGroup $ResourceGroupForDeployment -WebAppName $WebAppNamePortal -VnetName $VnetName -SubnetName "web" -AzCliOutput "none"
+Add-WebAppVnetIntegration -ResourceGroup $ResourceGroupForDeployment -WebAppName $WebAppNameAdmin -VnetName $VnetName -SubnetName "web" -AzCliOutput "none"
 
-Write-host "## STEP 2.2 Building Meter Scheduler"
-dotnet publish ../src/MeteredTriggerJob/MeteredTriggerJob.csproj -c release -o ../Publish/AdminSite/app_data/jobs/triggered/MeteredTriggerJob/ --runtime win-x64 --self-contained true -p:PublishReadyToRun=false
+if (-not $SkipBuild) {
+    Write-Host "## STEP 2.2 Build publish packages"
+    Build-PublishPackages `
+        -RepoRoot $RepoRoot `
+        -PublishRoot $PublishRoot `
+        -AdminPublishDir $AdminPublishDir `
+        -PortalPublishDir $PortalPublishDir `
+        -AdminZipPath $AdminZipPath `
+        -PortalZipPath $PortalZipPath
+} elseif (-not (Test-Path $AdminZipPath) -or -not (Test-Path $PortalZipPath)) {
+    throw "SkipBuild was set but publish packages were not found."
+}
 
-Write-host "## STEP 2.3 Building Customer Portal" 
-dotnet publish ../src/CustomerSite/CustomerSite.csproj -v q -c release -o ../Publish/CustomerSite
-
-Write-host "## STEP 2.4 Compress packages." 
-Compress-Archive -Path ../Publish/CustomerSite/* -DestinationPath ../Publish/CustomerSite.zip -Force
-Compress-Archive -Path ../Publish/AdminSite/* -DestinationPath ../Publish/AdminSite.zip -Force
-
-Write-host "## STEP 2.5 Deploying code to Admin Portal"
+Write-Host "## STEP 2.3 Deploying code to Admin Portal"
+if (-not (Test-Path $AdminZipPath)) { throw "Admin publish package not found: $AdminZipPath" }
 az webapp deploy `
-	--resource-group $ResourceGroupForDeployment `
-	--name $WebAppNameAdmin `
-	--src-path "../Publish/AdminSite.zip" `
-	--type zip
-Write-host "## Deployed code to Admin Portal"
+    --resource-group $ResourceGroupForDeployment `
+    --name $WebAppNameAdmin `
+    --src-path $AdminZipPath `
+    --type zip `
+    --output none
 
-Write-host "## STEP 2.6 Deploying code to Customer Portal"
+Write-Host "## STEP 2.4 Deploying code to Customer Portal"
+if (-not (Test-Path $PortalZipPath)) { throw "Customer publish package not found: $PortalZipPath" }
 az webapp deploy `
-	--resource-group $ResourceGroupForDeployment `
-	--name $WebAppNamePortal `
-	--src-path "../Publish/CustomerSite.zip"  `
-	--type zip
-Write-host "## Deployed code to Customer Portal"
+    --resource-group $ResourceGroupForDeployment `
+    --name $WebAppNamePortal `
+    --src-path $PortalZipPath `
+    --type zip `
+    --output none
+
+Write-Host "## STEP 2.5 Restart and verify web apps"
+az webapp restart -g $ResourceGroupForDeployment -n $WebAppNameAdmin --output none
+az webapp restart -g $ResourceGroupForDeployment -n $WebAppNamePortal --output none
+Test-WebAppDeploymentHealth -WebAppName $WebAppNamePortal
+Test-WebAppDeploymentHealth -WebAppName $WebAppNameAdmin
+
+Remove-Item -Path $PublishRoot -Recurse -Force -ErrorAction SilentlyContinue
+
+Write-Host "#### Code deployment complete ####"
 
 #endregion Deploy code
 
-Remove-Item -Path ../Publish -recurse -Force
-Write-host "#### Code deployment complete ####" 
-Write-host ""
-Write-host "#### The upgrade process has completed successfully ####" 
-Write-host ""
-Write-host "#### Warning!!! ####"
-Write-host "#### If the upgrade is to >=7.5.0, MeterScheduler feature is pre-enabled and changed to DB config instead of the App Service configuration. Please update the IsMeteredBillingEnabled value accordingly in the Admin portal -> Settings page. ####"
-Write-host "#### "
+Write-Host ""
+Write-Host "#### The upgrade process has completed successfully ####"
+Write-Host ""
+Write-Host "#### Warning!!! ####"
+Write-Host "#### If the upgrade is to >=7.5.0, MeterScheduler feature is pre-enabled and changed to DB config instead of the App Service configuration. Please update the IsMeteredBillingEnabled value accordingly in the Admin portal -> Settings page. ####"
