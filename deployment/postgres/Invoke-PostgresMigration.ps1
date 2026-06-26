@@ -5,7 +5,8 @@ param(
     [Parameter(Mandatory)] [string] $DatabaseName,
     [Parameter(Mandatory)] [string] $DatabaseUser,
     [Parameter(Mandatory)] [string] $DatabasePassword,
-    [Parameter(Mandatory)] [string] $ScriptPath
+    [Parameter(Mandatory)] [string] $ScriptPath,
+    [Parameter()] [string] $DeployTempDir = $env:TEMP
 )
 
 $ErrorActionPreference = "Stop"
@@ -20,34 +21,47 @@ if ([string]::IsNullOrWhiteSpace($sql)) {
     throw "Migration script is empty: $resolvedScriptPath"
 }
 
-$sqlB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($sql))
+$sql = $sql.Replace("`r`n", "`n").Replace("`r", "`n")
 $escapedPassword = $DatabasePassword.Replace("'", "'\''")
+$delimiter = "SAAS_MIGRATE_EOF_$(Get-Random)"
 
-$remoteScript = @"
-set -euo pipefail
-echo '$sqlB64' | base64 -d > /tmp/saas-migrate.sql
+$runnerScript = @"
+#!/bin/bash
+set -e
 export PGPASSWORD='$escapedPassword'
+cat > /tmp/saas-migrate.sql <<'$delimiter'
+$sql
+$delimiter
 psql -h 127.0.0.1 -U '$DatabaseUser' -d '$DatabaseName' -v ON_ERROR_STOP=1 -f /tmp/saas-migrate.sql
 rm -f /tmp/saas-migrate.sql
+echo MIGRATION_OK
 "@
 
-Write-Host "      ➡️ Applying database migration on VM $VmName via Run Command..."
-$result = az vm run-command invoke `
+$runnerScript = $runnerScript.Replace("`r`n", "`n").Replace("`r", "`n")
+$runnerPath = Join-Path $DeployTempDir "$VmName-migrate-$(Get-Random).sh"
+$utf8NoBom = New-Object System.Text.UTF8Encoding $false
+[System.IO.File]::WriteAllText($runnerPath, $runnerScript, $utf8NoBom)
+
+Write-Host "      Applying database migration on VM $VmName via Run Command..."
+$ErrorActionPreference = 'Continue'
+$resultJson = az vm run-command invoke `
     --resource-group $ResourceGroup `
     --name $VmName `
     --command-id RunShellScript `
-    --scripts $remoteScript `
-    --output json | ConvertFrom-Json
+    --scripts "@$runnerPath" `
+    --output json 2>$null | Out-String
+$exit = $LASTEXITCODE
+$ErrorActionPreference = 'Stop'
+Remove-Item -Path $runnerPath -Force -ErrorAction SilentlyContinue
 
-$stdout = $result.value[0].message
-$stderr = $result.value[0].stderr
-if ($stdout) { Write-Host $stdout }
-if ($stderr -and $stderr -notmatch '^\s*$') {
-    Write-Host $stderr -ForegroundColor Yellow
+if ($exit -ne 0 -or [string]::IsNullOrWhiteSpace($resultJson)) {
+    throw "Database migration command failed on VM '$VmName'."
 }
 
-if ($stderr -match 'ERROR:|FATAL:|psql:.* error:') {
+$output = ($resultJson | ConvertFrom-Json).value[0].message
+if ($output -notmatch 'MIGRATION_OK') {
+    if ($output) { Write-Host $output }
     throw "Database migration failed on VM '$VmName'. See output above."
 }
 
-Write-Host "      ✅ Database migration applied." -ForegroundColor Green
+Write-Host "      Database migration applied." -ForegroundColor Green

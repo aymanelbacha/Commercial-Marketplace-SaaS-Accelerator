@@ -1,4 +1,4 @@
-# Shared helpers for Deploy.ps1 and Upgrade.ps1
+﻿# Shared helpers for Deploy.ps1 and Upgrade.ps1
 
 function Ensure-DotNetEfTool {
     $efVersion = dotnet ef --version 2>$null
@@ -29,6 +29,7 @@ function Test-SolutionBuild {
         if (-not (Test-Path $project)) {
             throw "Required project not found: $project"
         }
+        dotnet restore $project --verbosity quiet
         dotnet build $project -c Release --no-restore --verbosity quiet
         if ($LASTEXITCODE -ne 0) {
             throw "Build failed for $project. Fix compile errors before deploying."
@@ -64,6 +65,46 @@ function Build-PublishPackages {
     Compress-Archive -Path (Join-Path $PortalPublishDir "*") -DestinationPath $PortalZipPath -Force
 }
 
+function Configure-WebAppDatabaseSettings {
+    param(
+        [string]$ResourceGroup,
+        [string]$WebAppName,
+        [string]$ConnectionString,
+        [string]$ClientSecret,
+        [string]$AzCliOutput = "json"
+    )
+
+    Write-Host "      ➡️ Configure PostgreSQL connection for $WebAppName"
+    $ErrorActionPreference = 'Continue'
+    az webapp config connection-string set `
+        --resource-group $ResourceGroup `
+        --name $WebAppName `
+        --connection-string-type Custom `
+        --settings DefaultConnection="$ConnectionString" `
+        --output $AzCliOutput | Out-Null
+    az webapp config appsettings set `
+        --resource-group $ResourceGroup `
+        --name $WebAppName `
+        --settings "ConnectionStrings__DefaultConnection=$ConnectionString" "SaaSApiConfiguration__ClientSecret=$ClientSecret" "WEBSITE_VNET_ROUTE_ALL=1" `
+        --output $AzCliOutput | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Failed to configure database settings for '$WebAppName'." }
+    $ErrorActionPreference = 'Stop'
+}
+
+function Configure-WebAppKeyVaultReferences {
+    param(
+        [string]$ResourceGroup,
+        [string]$WebAppName,
+        [string]$AzCliOutput = "json"
+    )
+
+    Write-Host "      ➡️ Enable Key Vault reference resolution for $WebAppName"
+    $ErrorActionPreference = 'Continue'
+    az webapp update --resource-group $ResourceGroup --name $WebAppName --set keyVaultReferenceIdentity=SystemAssigned --output $AzCliOutput | Out-Null
+    az webapp config appsettings set --resource-group $ResourceGroup --name $WebAppName --settings WEBSITE_VNET_ROUTE_ALL=1 --output $AzCliOutput | Out-Null
+    $ErrorActionPreference = 'Stop'
+}
+
 function Add-WebAppVnetIntegration {
     param(
         [string]$ResourceGroup,
@@ -79,12 +120,18 @@ function Add-WebAppVnetIntegration {
         return
     }
 
+    $ErrorActionPreference = 'Continue'
+    if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue) {
+        $PSNativeCommandUseErrorActionPreference = $false
+    }
     az webapp vnet-integration add `
         --resource-group $ResourceGroup `
         --name $WebAppName `
         --vnet $VnetName `
         --subnet $SubnetName `
-        --output $AzCliOutput
+        --output $AzCliOutput 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Failed to add VNet integration for web app '$WebAppName'." }
+    $ErrorActionPreference = 'Stop'
 }
 
 function Enable-DeployerKeyVaultAccess {
@@ -100,8 +147,19 @@ function Enable-DeployerKeyVaultAccess {
         return $null
     }
 
+    if ($myIp -notmatch '/') {
+        $myIp = "$myIp/32"
+    }
+
     Write-Host "      ➡️ Temporarily allowing deployer IP $myIp on Key Vault $KeyVault"
-    az keyvault network-rule add --name $KeyVault --resource-group $ResourceGroup --ip-address $myIp --output none 2>$null
+    $ErrorActionPreference = 'Continue'
+    az keyvault network-rule add --name $KeyVault --resource-group $ResourceGroup --ip-address $myIp --output none
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "      ⚠️ Could not add deployer IP rule to Key Vault (exit $LASTEXITCODE)." -ForegroundColor Yellow
+    } else {
+        Start-Sleep -Seconds 15
+    }
+    $ErrorActionPreference = 'Stop'
     return $myIp
 }
 
@@ -115,6 +173,54 @@ function Disable-DeployerKeyVaultAccess {
     if ([string]::IsNullOrWhiteSpace($IpAddress)) { return }
     Write-Host "      ➡️ Removing temporary deployer IP $IpAddress from Key Vault $KeyVault"
     az keyvault network-rule remove --name $KeyVault --resource-group $ResourceGroup --ip-address $IpAddress --output none 2>$null
+}
+
+function Set-KeyVaultSecretValue {
+    param(
+        [string]$KeyVault,
+        [string]$SecretName,
+        [string]$SecretValue,
+        [string]$AzCliOutput = "json"
+    )
+
+    $secretFile = [System.IO.Path]::GetTempFileName()
+    try {
+        $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+        [System.IO.File]::WriteAllText($secretFile, $SecretValue, $utf8NoBom)
+        $ErrorActionPreference = 'Continue'
+        az keyvault secret set --vault-name $KeyVault --name $SecretName --file $secretFile --encoding utf-8 --output $AzCliOutput | Out-Null
+        $ErrorActionPreference = 'Stop'
+        if ($LASTEXITCODE -ne 0) { throw "Failed to set Key Vault secret '$SecretName'." }
+    } finally {
+        Remove-Item -Path $secretFile -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Set-KeyVaultSecrets {
+    param(
+        [string]$KeyVault,
+        [string]$ResourceGroup,
+        [hashtable]$Secrets,
+        [string]$AzCliOutput = "json"
+    )
+
+    Write-Host "      ➡️ Temporarily opening Key Vault firewall for secret deployment"
+    $ErrorActionPreference = 'Continue'
+    az keyvault update --name $KeyVault --resource-group $ResourceGroup --default-action Allow --output none
+    if ($LASTEXITCODE -ne 0) { throw "Failed to open Key Vault firewall on '$KeyVault'." }
+    Start-Sleep -Seconds 5
+    $ErrorActionPreference = 'Stop'
+
+    try {
+        foreach ($entry in $Secrets.GetEnumerator()) {
+            Set-KeyVaultSecretValue -KeyVault $KeyVault -SecretName $entry.Key -SecretValue ([string]$entry.Value) -AzCliOutput $AzCliOutput
+        }
+    } finally {
+        Write-Host "      ➡️ Restoring Key Vault firewall default action to Deny"
+        $ErrorActionPreference = 'Continue'
+        az keyvault update --name $KeyVault --resource-group $ResourceGroup --default-action Deny --output none
+        $ErrorActionPreference = 'Stop'
+    }
 }
 
 function Get-KeyVaultSecretValue {
@@ -143,17 +249,22 @@ function Invoke-PostgresCompatibilityMigration {
         [string]$DatabasePassword
     )
 
-    . (Join-Path $DeployScriptRoot "postgres/Invoke-PostgresMigration.ps1")
     $compatScriptPath = Join-Path $DeployTempDir "saas-compat.sql"
-    $compatibilityScript = @"
-CREATE TABLE IF NOT EXISTS ""__EFMigrationsHistory"" (
-    ""MigrationId"" character varying(150) NOT NULL,
-    ""ProductVersion"" character varying(32) NOT NULL,
-    CONSTRAINT ""PK___EFMigrationsHistory"" PRIMARY KEY (""MigrationId"")
+    $postgresCompatPath = Join-Path $DeployScriptRoot "postgres/postgres-compat.sql"
+    $compatibilityScript = @'
+CREATE TABLE IF NOT EXISTS "__EFMigrationsHistory" (
+    "MigrationId" character varying(150) NOT NULL,
+    "ProductVersion" character varying(32) NOT NULL,
+    CONSTRAINT "PK___EFMigrationsHistory" PRIMARY KEY ("MigrationId")
 );
-"@
-    Set-Content -Path $compatScriptPath -Value $compatibilityScript -Encoding UTF8
-    Invoke-PostgresMigration `
+
+'@
+    if (Test-Path $postgresCompatPath) {
+        $compatibilityScript += (Get-Content -Path $postgresCompatPath -Raw -Encoding UTF8)
+    }
+    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText($compatScriptPath, $compatibilityScript, $utf8NoBom)
+    & (Join-Path $DeployScriptRoot "postgres/Invoke-PostgresMigration.ps1") `
         -ResourceGroup $ResourceGroup `
         -VmName $VmName `
         -DatabaseName $DatabaseName `
@@ -166,11 +277,12 @@ CREATE TABLE IF NOT EXISTS ""__EFMigrationsHistory"" (
 function Test-WebAppDeploymentHealth {
     param(
         [string]$WebAppName,
+        [string]$HealthPath = "/",
         [int]$MaxAttempts = 20,
         [int]$SleepSeconds = 15
     )
 
-    $url = "https://$WebAppName.azurewebsites.net/"
+    $url = "https://$WebAppName.azurewebsites.net$HealthPath"
     Write-Host "      ➡️ Health check: $url"
 
     for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
@@ -181,6 +293,9 @@ function Test-WebAppDeploymentHealth {
                 Write-Host "         attempt $attempt/$MaxAttempts HTTP $($response.StatusCode)"
             } elseif ($body -match 'Your web app is running and waiting for your content') {
                 Write-Host "         attempt $attempt/$MaxAttempts still showing Azure placeholder page"
+            } elseif ($body -match 'Sign in to your account|login\.microsoftonline\.com') {
+                Write-Host "      ✅ $WebAppName responded with sign-in page." -ForegroundColor Green
+                return
             } else {
                 Write-Host "      ✅ $WebAppName responded without placeholder page." -ForegroundColor Green
                 return

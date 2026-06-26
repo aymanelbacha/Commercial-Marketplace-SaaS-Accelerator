@@ -46,7 +46,7 @@ BEGIN
         CAST(ROW_NUMBER() OVER (ORDER BY oa.""ID"") AS integer) AS ""RowNumber"",
         COALESCE(sav.""ID"", 0) AS ""Id"",
         COALESCE(sav.""PlanAttributeId"", pa.""PlanAttributeId"") AS ""PlanAttributeId"",
-        COALESCE(sav.""PlanId"", p_plan_id) AS ""PlanId"",
+        COALESCE(sav.""PlanID"", p_plan_id) AS ""PlanId"",
         COALESCE(pa.""OfferAttributeID"", oa.""ID"") AS ""OfferAttributeId"",
         COALESCE(oa.""DisplayName"", '') AS ""DisplayName"",
         COALESCE(oa.""Type"", '') AS ""Type"",
@@ -60,7 +60,7 @@ BEGIN
         sav.""UserId"",
         sav.""CreateDate"",
         COALESCE(oa.""FromList"", false) AS ""FromList"",
-        COALESCE(oa.""ValuesList"", '') AS ""ValuesList"",
+        COALESCE(oa.""ValuesList"", '')::character varying AS ""ValuesList"",
         COALESCE(oa.""Max"", 0) AS ""Max"",
         COALESCE(oa.""Min"", 0) AS ""Min"",
         COALESCE(vt.""HTMLType"", '') AS ""HTMLType""

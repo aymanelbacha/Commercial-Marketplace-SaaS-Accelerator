@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore.Migrations;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Text;
 
 namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations.Custom
@@ -20,25 +21,25 @@ namespace Marketplace.SaaS.Accelerator.DataAccess.Migrations.Custom
 
         public static void BaselineV2_SeedData(this MigrationBuilder migrationBuilder)
         {
-            var seedDate = DateTime.Now;
+            var seedDate = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
             migrationBuilder.Sql(@$"
-INSERT INTO ValueTypes
-    (ValueType,CreateDate,HTMLType)
+INSERT INTO ""ValueTypes""
+    (""ValueType"",""CreateDate"",""HTMLType"")
 VALUES 
     ('Int','{seedDate}','int'),
     ('String','{seedDate}','string'),
-    ('Date','{seedDate}','date')
+    ('Date','{seedDate}','date');
 ");
           
-            migrationBuilder.Sql(@$"INSERT INTO Roles (name) VALUES ('PublisherAdmin')");
+            migrationBuilder.Sql(@$"INSERT INTO ""Roles"" (""Name"") VALUES ('PublisherAdmin');");
 
             migrationBuilder.Sql(@$"
-INSERT INTO Events
-	(EventsName,IsActive,CreateDate)
+INSERT INTO ""Events""
+	(""EventsName"",""IsActive"",""CreateDate"")
 VALUES
-    ('Activate',1,'{seedDate}'),
-	('Unsubscribe',1,'{seedDate}'),
-	('Pending Activation',1,'{seedDate}')
+    ('Activate',true,'{seedDate}'),
+	('Unsubscribe',true,'{seedDate}'),
+	('Pending Activation',true,'{seedDate}');
 ");
 
             migrationBuilder.Sql(@$"
@@ -55,7 +56,7 @@ VALUES
 	('IsEmailEnabledForSubscriptionActivation','true','Active Email Enabled'),
 	('IsEmailEnabledForUnsubscription','true','Unsubscribe Email Enabled'),
 	('IsAutomaticProvisioningSupported','false','Skip Activation - Automatic Provisioning Supported'),
-	('IsEmailEnabledForPendingActivation','false','Email Enabled For Pending Activation')
+	('IsEmailEnabledForPendingActivation','false','Email Enabled For Pending Activation');
 ");
             
             migrationBuilder.Sql(@$"
@@ -75,10 +76,10 @@ WHERE NOT EXISTS (SELECT 1 FROM ""ApplicationConfiguration"" WHERE ""Name"" = 'F
 INSERT INTO ""EmailTemplate""
 	(""Status"",""Description"",""InsertDate"",""TemplateBody"",""Subject"",""IsActive"")
 VALUES
-    ('Failed','Failed','{seedDate}', '{FAILED_EMAIL_TEMPLATE}','Failed',1),
-	('PendingActivation','Pending Activation','{seedDate}', '{PENDINGACTIVATION_EMAIL_TEMPLATE}','Pending Activation',1),
-	('Subscribed','Subscribed','{seedDate}', '{SUBSCRIBED_EMAIL_TEMPLATE}','Subscribed',1),
-	('Unsubscribed','Unsubscribed','{seedDate}', '{UNSUBSCRIBED_EMAIL_TEMPLATE}','Unsubscribed',1)
+    ('Failed','Failed','{seedDate}', '{FAILED_EMAIL_TEMPLATE}','Failed',true),
+	('PendingActivation','Pending Activation','{seedDate}', '{PENDINGACTIVATION_EMAIL_TEMPLATE}','Pending Activation',true),
+	('Subscribed','Subscribed','{seedDate}', '{SUBSCRIBED_EMAIL_TEMPLATE}','Subscribed',true),
+	('Unsubscribed','Unsubscribed','{seedDate}', '{UNSUBSCRIBED_EMAIL_TEMPLATE}','Unsubscribed',true);
 ");
 
         }

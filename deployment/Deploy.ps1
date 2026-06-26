@@ -29,7 +29,9 @@ Param(
    [string][Parameter()]$KeyVault, # Name of KeyVault
    [switch][Parameter()]$EnableKeyVaultPrivateEndpoint, # Optional hardened Key Vault private endpoint (off by default for reliability)
    [switch][Parameter()]$SkipBuild, # Skip dotnet publish if packages already built
-   [switch][Parameter()]$Quiet #if set, only show error / warning output from script commands
+   [switch][Parameter()]$SkipPostgresBootstrap, # Skip VM/network/postgres install when DB is already ready
+   [switch][Parameter()]$Quiet, #if set, only show error / warning output from script commands
+   [switch][Parameter()]$AcceptLicense # Skip the MIT license prompt (for non-interactive runs)
 )
 
 # Define the warning message
@@ -45,7 +47,7 @@ Do you agree? (Y/N)
 Write-Host $message -ForegroundColor Yellow
 
 # Prompt the user for input
-$response = Read-Host
+$response = if ($AcceptLicense) { 'Y' } else { Read-Host }
 
 # Check the user's response
 if ($response -ne 'Y' -and $response -ne 'y') {
@@ -93,6 +95,9 @@ Write-Host "🔑 Azure Subscription '$AzureSubscriptionID' selected."
 
 
 $ErrorActionPreference = "Stop"
+if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue) {
+    $PSNativeCommandUseErrorActionPreference = $false
+}
 $startTime = Get-Date
 
 $DeployScriptRoot = if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
@@ -139,18 +144,18 @@ if($KeyVault -eq "")
    $KeyVault=$WebAppNamePrefix+"-kv"
 
    # Check if the KeyVault exists under resource group
-   $kv_check=$(az keyvault show -n $KeyVault -g $ResourceGroupForDeployment) 2>$null    
+   $ErrorActionPreference = 'SilentlyContinue'
+   $kv_check = az keyvault show -n $KeyVault -g $ResourceGroupForDeployment 2>$null
+   if ($LASTEXITCODE -ne 0) { $kv_check = $null }
+   $ErrorActionPreference = 'Stop'
 
    # If KeyVault does not exist under resource group, then we need to check if it deleted KeyVault
    if($kv_check -eq $null)
    {
 	#region Check If KeyVault Exists
-		$KeyVaultApiUri="https://management.azure.com/subscriptions/$AzureSubscriptionID/providers/Microsoft.KeyVault/checkNameAvailability?api-version=2019-09-01"
-		$KeyVaultApiBody='{"name": "'+$KeyVault+'","type": "Microsoft.KeyVault/vaults"}'
+		$kv_check = az keyvault check-name --name $KeyVault | ConvertFrom-Json
 
-		$kv_check=az rest --method post --uri $KeyVaultApiUri --headers 'Content-Type=application/json' --body $KeyVaultApiBody | ConvertFrom-Json
-
-		if( $kv_check.reason -eq "AlreadyExists")
+		if ($kv_check.nameAvailable -eq $false)
 		{
 			Write-Host ""
 			Write-Host "🛑  KeyVault name "  -NoNewline -ForegroundColor Red
@@ -216,17 +221,15 @@ Write-Host "Starting SaaS Accelerator Deployment..."
 
 
 #region Check If PostgreSQL VM Exists
+$PostgresVmExists = $false
+$ErrorActionPreference = 'SilentlyContinue'
 $vm_exists = az vm show --name $SQLServerName --resource-group $ResourceGroupForDeployment 2>$null
-if ($vm_exists) 
-{
-	Write-Host ""
-	Write-Host "🛑 PostgreSQL VM name " -NoNewline -ForegroundColor Red
-	Write-Host "$SQLServerName"   -NoNewline -ForegroundColor Red -BackgroundColor Yellow
-	Write-Host " already exists." -ForegroundColor Red
-	Write-Host "Please delete the existing VM or choose a new name with parameter" -NoNewline 
-	Write-Host " -SQLServerName"   -ForegroundColor Green
-    exit 1
-}  
+if ($LASTEXITCODE -ne 0) { $vm_exists = $null }
+$ErrorActionPreference = 'Stop'
+if ($vm_exists) {
+    Write-Host "      PostgreSQL VM '$SQLServerName' already exists; will reuse it." -ForegroundColor Yellow
+    $PostgresVmExists = $true
+}
 #endregion
 
 #region Dowloading assets if provided
@@ -286,12 +289,30 @@ else {
 if (!($ADApplicationID)) {   
     Write-Host "🔑 Creating Fulfilment API App Registration"
     try {   
-        $ADApplication = az ad app create --only-show-errors --sign-in-audience AzureADMYOrg --display-name "$WebAppNamePrefix-FulfillmentAppReg" | ConvertFrom-Json
+        $fulfillmentDisplayName = "$WebAppNamePrefix-FulfillmentAppReg"
+        $ErrorActionPreference = 'SilentlyContinue'
+        $existingApps = @(az ad app list --display-name $fulfillmentDisplayName --query "[?displayName=='$fulfillmentDisplayName']" | ConvertFrom-Json)
+        $ErrorActionPreference = 'Stop'
+
+        if ($existingApps.Count -gt 0) {
+            $ADApplication = $existingApps[0]
+            Write-Host "   🔵 Reusing existing FulfilmentAPI App Registration."
+        } else {
+            $ADApplication = az ad app create --only-show-errors --sign-in-audience AzureADMYOrg --display-name $fulfillmentDisplayName | ConvertFrom-Json
+        }
+
 		$ADObjectID = $ADApplication.id
         $ADApplicationID = $ADApplication.appId
         sleep 5 #this is to give time to AAD to register
-		# create service principal
-		az ad sp create --id $ADApplicationID
+
+        $ErrorActionPreference = 'SilentlyContinue'
+        az ad sp show --id $ADApplicationID 2>$null | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            az ad sp create --id $ADApplicationID 2>$null
+            if ($LASTEXITCODE -ne 0) { throw "Failed to create service principal for app $ADApplicationID" }
+        }
+        $ErrorActionPreference = 'Stop'
+
         $ADApplicationSecret = az ad app credential reset --id $ADObjectID --append --display-name 'SaaSAPI' --years 2 --query password --only-show-errors --output tsv
 				
         Write-Host "   🔵 FulfilmentAPI App Registration created."
@@ -492,7 +513,17 @@ $KvSubnetName="kv"
 $DefaultSubnetName="default"
 $PostgresNsgName=$WebAppNamePrefix+"-pg-nsg"
 $PostgresAdminUser="saasadmin"
-$PostgresAdminPassword = -join ((48..57) + (65..90) + (97..122) | Get-Random -Count 32 | ForEach-Object {[char]$_})
+$DeployStatePath = Join-Path $DeployTempDir "$WebAppNamePrefix-deploy-state.json"
+if (Test-Path $DeployStatePath) {
+    $deployState = Get-Content -Path $DeployStatePath -Raw | ConvertFrom-Json
+    $PostgresAdminPassword = $deployState.PostgresAdminPassword
+    Write-Host "      Reusing PostgreSQL credentials from prior deploy run." -ForegroundColor Yellow
+} elseif ($env:SAAS_DEPLOY_POSTGRES_PASSWORD) {
+    $PostgresAdminPassword = $env:SAAS_DEPLOY_POSTGRES_PASSWORD
+} else {
+    $PostgresAdminPassword = -join ((48..57) + (65..90) + (97..122) | Get-Random -Count 32 | ForEach-Object {[char]$_})
+}
+@{ PostgresAdminPassword = $PostgresAdminPassword; WebAppNamePrefix = $WebAppNamePrefix } | ConvertTo-Json | Set-Content -Path $DeployStatePath -Encoding UTF8
 $VnetCidr="10.0.0.0/20"
 $WebSubnetCidr="10.0.1.0/24"
 
@@ -502,106 +533,201 @@ $DefaultConnectionKeyVault="@Microsoft.KeyVault(VaultName=$KeyVault;SecretName=D
 
 Write-host "   🔵 Resource Group"
 Write-host "      ➡️ Create Resource Group"
-az group create --location $Location --name $ResourceGroupForDeployment --output $azCliOutput
+$ErrorActionPreference = 'SilentlyContinue'
+$existingRgJson = az group show --name $ResourceGroupForDeployment 2>$null
+$ErrorActionPreference = 'Stop'
+if ($LASTEXITCODE -eq 0 -and $existingRgJson) {
+    $existingRg = $existingRgJson | ConvertFrom-Json
+    $requestedLocation = ($Location -replace '\s', '').ToLower()
+    if ($existingRg.location -ne $requestedLocation) {
+        Write-Host "      Resource group '$ResourceGroupForDeployment' already exists in '$($existingRg.location)'; using that location instead of '$Location'." -ForegroundColor Yellow
+    }
+    $Location = $existingRg.location
+} else {
+    az group create --location $Location --name $ResourceGroupForDeployment --output $azCliOutput
+    if ($LASTEXITCODE -ne 0) { throw "Failed to create resource group $ResourceGroupForDeployment in $Location" }
+}
 
 Write-host "      ➡️ Create VNET and Subnet"
-az network vnet create --resource-group $ResourceGroupForDeployment --name $VnetName --address-prefixes "10.0.0.0/20" --output $azCliOutput
-az network vnet subnet create --resource-group $ResourceGroupForDeployment --vnet-name $VnetName -n $DefaultSubnetName --address-prefixes "10.0.0.0/24" --output $azCliOutput
-az network vnet subnet create --resource-group $ResourceGroupForDeployment --vnet-name $VnetName -n $WebSubnetName --address-prefixes $WebSubnetCidr --service-endpoints Microsoft.KeyVault --delegations Microsoft.Web/serverfarms  --output $azCliOutput 
-az network vnet subnet create --resource-group $ResourceGroupForDeployment --vnet-name $VnetName -n $SqlSubnetName --address-prefixes "10.0.2.0/24"  --output $azCliOutput 
-az network vnet subnet create --resource-group $ResourceGroupForDeployment --vnet-name $VnetName -n $KvSubnetName --address-prefixes "10.0.3.0/24"   --output $azCliOutput 
+$ErrorActionPreference = 'SilentlyContinue'
+$vnetExists = az network vnet show --resource-group $ResourceGroupForDeployment --name $VnetName 2>$null
+$ErrorActionPreference = 'Stop'
+if (-not $vnetExists) {
+    az network vnet create --resource-group $ResourceGroupForDeployment --name $VnetName --address-prefixes "10.0.0.0/20" --output $azCliOutput
+    if ($LASTEXITCODE -ne 0) { throw "Failed to create virtual network $VnetName" }
+}
+function Ensure-VnetSubnet {
+    param(
+        [string]$ResourceGroup,
+        [string]$Vnet,
+        [string]$SubnetName,
+        [string[]]$CreateArgs
+    )
+    $ErrorActionPreference = 'SilentlyContinue'
+    $subnetExists = az network vnet subnet show --resource-group $ResourceGroup --vnet-name $Vnet --name $SubnetName 2>$null
+    $ErrorActionPreference = 'Stop'
+    if (-not $subnetExists) {
+        az network vnet subnet create @CreateArgs --output $azCliOutput
+        if ($LASTEXITCODE -ne 0) { throw "Failed to create subnet $SubnetName" }
+    }
+}
+Ensure-VnetSubnet -ResourceGroup $ResourceGroupForDeployment -Vnet $VnetName -SubnetName $DefaultSubnetName -CreateArgs @('--resource-group', $ResourceGroupForDeployment, '--vnet-name', $VnetName, '-n', $DefaultSubnetName, '--address-prefixes', '10.0.0.0/24')
+Ensure-VnetSubnet -ResourceGroup $ResourceGroupForDeployment -Vnet $VnetName -SubnetName $WebSubnetName -CreateArgs @('--resource-group', $ResourceGroupForDeployment, '--vnet-name', $VnetName, '-n', $WebSubnetName, '--address-prefixes', $WebSubnetCidr, '--service-endpoints', 'Microsoft.KeyVault', '--delegations', 'Microsoft.Web/serverfarms')
+Ensure-VnetSubnet -ResourceGroup $ResourceGroupForDeployment -Vnet $VnetName -SubnetName $SqlSubnetName -CreateArgs @('--resource-group', $ResourceGroupForDeployment, '--vnet-name', $VnetName, '-n', $SqlSubnetName, '--address-prefixes', '10.0.2.0/24')
+Ensure-VnetSubnet -ResourceGroup $ResourceGroupForDeployment -Vnet $VnetName -SubnetName $KvSubnetName -CreateArgs @('--resource-group', $ResourceGroupForDeployment, '--vnet-name', $VnetName, '-n', $KvSubnetName, '--address-prefixes', '10.0.3.0/24')
 
+if (-not $SkipPostgresBootstrap) {
 Write-host "      ➡️ Create PostgreSQL VM network security group (private-only)"
-az network nsg create --resource-group $ResourceGroupForDeployment --name $PostgresNsgName --location $Location --output $azCliOutput
-az network nsg rule create --resource-group $ResourceGroupForDeployment --nsg-name $PostgresNsgName -n AllowPostgresFromWeb --priority 100 --direction Inbound --access Allow --protocol Tcp --source-address-prefixes $WebSubnetCidr --source-port-ranges "*" --destination-address-prefixes "*" --destination-port-ranges 5432 --output $azCliOutput
-az network nsg rule create --resource-group $ResourceGroupForDeployment --nsg-name $PostgresNsgName -n AllowOutboundHttps --priority 110 --direction Outbound --access Allow --protocol Tcp --source-address-prefixes "*" --source-port-ranges "*" --destination-address-prefixes "Internet" --destination-port-ranges 443 --output $azCliOutput
-az network nsg rule create --resource-group $ResourceGroupForDeployment --nsg-name $PostgresNsgName -n AllowOutboundHttp --priority 120 --direction Outbound --access Allow --protocol Tcp --source-address-prefixes "*" --source-port-ranges "*" --destination-address-prefixes "Internet" --destination-port-ranges 80 --output $azCliOutput
+$ErrorActionPreference = 'SilentlyContinue'
+$nsgExists = az network nsg show --resource-group $ResourceGroupForDeployment --name $PostgresNsgName 2>$null
+$ErrorActionPreference = 'Stop'
+if (-not $nsgExists) {
+    az network nsg create --resource-group $ResourceGroupForDeployment --name $PostgresNsgName --location $Location --output $azCliOutput
+    if ($LASTEXITCODE -ne 0) { throw "Failed to create NSG $PostgresNsgName" }
+    az network nsg rule create --resource-group $ResourceGroupForDeployment --nsg-name $PostgresNsgName -n AllowPostgresFromWeb --priority 100 --direction Inbound --access Allow --protocol Tcp --source-address-prefixes $WebSubnetCidr --source-port-ranges "*" --destination-address-prefixes "*" --destination-port-ranges 5432 --output $azCliOutput
+    az network nsg rule create --resource-group $ResourceGroupForDeployment --nsg-name $PostgresNsgName -n AllowOutboundHttps --priority 110 --direction Outbound --access Allow --protocol Tcp --source-address-prefixes "*" --source-port-ranges "*" --destination-address-prefixes "Internet" --destination-port-ranges 443 --output $azCliOutput
+    az network nsg rule create --resource-group $ResourceGroupForDeployment --nsg-name $PostgresNsgName -n AllowOutboundHttp --priority 120 --direction Outbound --access Allow --protocol Tcp --source-address-prefixes "*" --source-port-ranges "*" --destination-address-prefixes "Internet" --destination-port-ranges 80 --output $azCliOutput
+}
 az network vnet subnet update --resource-group $ResourceGroupForDeployment --vnet-name $VnetName --name $SqlSubnetName --network-security-group $PostgresNsgName --output $azCliOutput
 
 Write-host "      ➡️ Create private PostgreSQL 16 Linux VM in sql subnet"
-$cloudInitTemplatePath = Join-Path $DeployScriptRoot "postgres/cloud-init.yaml"
-if (-not (Test-Path $cloudInitTemplatePath)) {
-    throw "cloud-init template not found: $cloudInitTemplatePath"
-}
-$cloudInitTemplate = Get-Content -Path $cloudInitTemplatePath -Raw
-$cloudInit = $cloudInitTemplate.Replace("__DB_NAME__", $SQLDatabaseName).Replace("__DB_USER__", $PostgresAdminUser).Replace("__DB_PASSWORD__", $PostgresAdminPassword).Replace("__VNET_CIDR__", $VnetCidr)
-$cloudInitPath = Join-Path $DeployTempDir "$SQLServerName-cloud-init.yaml"
-Set-Content -Path $cloudInitPath -Value $cloudInit -Encoding UTF8
-az vm create `
-    --resource-group $ResourceGroupForDeployment `
-    --name $SQLServerName `
-    --location $Location `
-    --image Ubuntu2204 `
-    --size Standard_B2s `
-    --admin-username azureuser `
-    --generate-ssh-keys `
-    --public-ip-address "" `
-    --vnet-name $VnetName `
-    --subnet $SqlSubnetName `
-    --nsg $PostgresNsgName `
-    --custom-data $cloudInitPath `
-    --output $azCliOutput
-Remove-Item -Path $cloudInitPath -Force -ErrorAction SilentlyContinue
+if (-not $PostgresVmExists) {
+    $orphanedNic = "${SQLServerName}VMNic"
+    $ErrorActionPreference = 'SilentlyContinue'
+    az network nic show --resource-group $ResourceGroupForDeployment --name $orphanedNic 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "      Removing orphaned NIC $orphanedNic from a prior failed deploy..."
+        az network nic delete --resource-group $ResourceGroupForDeployment --name $orphanedNic --output none
+    }
+    $ErrorActionPreference = 'Stop'
 
-Write-host "      ➡️ Wait for PostgreSQL bootstrap on VM"
-. (Join-Path $DeployScriptRoot "postgres/Wait-PostgresReady.ps1")
-Wait-PostgresReady `
+    $ErrorActionPreference = 'Continue'
+    az vm create `
+        --resource-group $ResourceGroupForDeployment `
+        --name $SQLServerName `
+        --location $Location `
+        --image Ubuntu2204 `
+        --size Standard_B2s `
+        --admin-username azureuser `
+        --generate-ssh-keys `
+        --public-ip-address '""' `
+        --vnet-name $VnetName `
+        --subnet $SqlSubnetName `
+        --nsg $PostgresNsgName `
+        --output $azCliOutput
+    if ($LASTEXITCODE -ne 0) { throw "Failed to create PostgreSQL VM '$SQLServerName'." }
+    $ErrorActionPreference = 'Stop'
+} else {
+    Write-Host "      Skipping PostgreSQL VM create (already exists)."
+}
+
+Write-host "      ➡️ Bootstrap PostgreSQL on VM"
+& (Join-Path $DeployScriptRoot "postgres/Ensure-PostgresReady.ps1") `
     -ResourceGroup $ResourceGroupForDeployment `
     -VmName $SQLServerName `
+    -DeployScriptRoot (Join-Path $DeployScriptRoot "postgres") `
+    -DatabaseName $SQLDatabaseName `
     -DatabaseUser $PostgresAdminUser `
     -DatabasePassword $PostgresAdminPassword `
-    -DatabaseName $SQLDatabaseName
+    -VnetCidr $VnetCidr
+} else {
+    Write-Host "      Skipping PostgreSQL VM bootstrap (-SkipPostgresBootstrap). Using existing VM '$SQLServerName'."
+    $ErrorActionPreference = 'SilentlyContinue'
+    $vmCheck = az vm show --name $SQLServerName --resource-group $ResourceGroupForDeployment 2>$null
+    $ErrorActionPreference = 'Stop'
+    if (-not $vmCheck) { throw "PostgreSQL VM '$SQLServerName' not found. Remove -SkipPostgresBootstrap or create the VM first." }
+}
 
 $PostgresPrivateIp = az vm list-ip-addresses --resource-group $ResourceGroupForDeployment --name $SQLServerName --query "[0].virtualMachine.network.privateIpAddresses[0]" -o tsv
 if ([string]::IsNullOrWhiteSpace($PostgresPrivateIp)) {
     throw "Could not resolve private IP for PostgreSQL VM '$SQLServerName'."
 }
-Write-host "      ➡️ PostgreSQL private endpoint: $PostgresPrivateIp:5432"
+Write-host "      ➡️ PostgreSQL private endpoint: ${PostgresPrivateIp}:5432"
 
 $Connection="Host=$PostgresPrivateIp;Port=5432;Database=$SQLDatabaseName;Username=$PostgresAdminUser;Password=$PostgresAdminPassword;SSL Mode=Prefer;Trust Server Certificate=true"
 
 Write-host "   🔵 KeyVault"
 Write-host "      ➡️ Create KeyVault"
-az keyvault create --name $KeyVault --resource-group $ResourceGroupForDeployment --enable-rbac-authorization false --output $azCliOutput
+$ErrorActionPreference = 'SilentlyContinue'
+$kvExists = az keyvault show --name $KeyVault --resource-group $ResourceGroupForDeployment 2>$null
+$ErrorActionPreference = 'Stop'
+if (-not $kvExists) {
+    az keyvault create --name $KeyVault --resource-group $ResourceGroupForDeployment --enable-rbac-authorization false --output $azCliOutput
+    if ($LASTEXITCODE -ne 0) { throw "Failed to create Key Vault $KeyVault" }
+} else {
+    Write-Host "      Key Vault '$KeyVault' already exists; reusing it." -ForegroundColor Yellow
+}
 Write-host "      ➡️ Add Secrets"
-az keyvault secret set --vault-name $KeyVault --name ADApplicationSecret --value="$ADApplicationSecret" --output $azCliOutput
-az keyvault secret set --vault-name $KeyVault --name DefaultConnection --value $Connection --output $azCliOutput
-az keyvault secret set --vault-name $KeyVault --name PostgresAdminPassword --value $PostgresAdminPassword --output $azCliOutput
+Set-KeyVaultSecrets -KeyVault $KeyVault -ResourceGroup $ResourceGroupForDeployment -AzCliOutput $azCliOutput -Secrets @{
+    ADApplicationSecret = $ADApplicationSecret
+    DefaultConnection = $Connection
+    PostgresAdminPassword = $PostgresAdminPassword
+}
 Write-host "      ➡️ Update Firewall"
 az keyvault update --name $KeyVault --resource-group $ResourceGroupForDeployment --default-action Deny --output $azCliOutput
 az keyvault network-rule add --name $KeyVault --resource-group $ResourceGroupForDeployment --vnet-name $VnetName --subnet $WebSubnetName --output $azCliOutput
 
 Write-host "   🔵 App Service Plan"
 Write-host "      ➡️ Create App Service Plan"
-az appservice plan create -g $ResourceGroupForDeployment -n $WebAppNameService --sku B1 --output $azCliOutput
+$ErrorActionPreference = 'SilentlyContinue'
+$aspExists = az appservice plan show -g $ResourceGroupForDeployment -n $WebAppNameService 2>$null
+$ErrorActionPreference = 'Stop'
+if (-not $aspExists) {
+    $ErrorActionPreference = 'Continue'
+    az appservice plan create -g $ResourceGroupForDeployment -n $WebAppNameService --sku B1 --output $azCliOutput
+    if ($LASTEXITCODE -ne 0) { throw "Failed to create App Service Plan $WebAppNameService" }
+    $ErrorActionPreference = 'Stop'
+} else {
+    Write-Host "      App Service Plan '$WebAppNameService' already exists; reusing it." -ForegroundColor Yellow
+}
 
 Write-host "   🔵 Admin Portal WebApp"
 Write-host "      ➡️ Create Web App"
-az webapp create -g $ResourceGroupForDeployment -p $WebAppNameService -n $WebAppNameAdmin  --runtime dotnet:8 --output $azCliOutput
+$ErrorActionPreference = 'SilentlyContinue'
+$adminAppExists = az webapp show -g $ResourceGroupForDeployment -n $WebAppNameAdmin 2>$null
+$ErrorActionPreference = 'Stop'
+if (-not $adminAppExists) {
+    $ErrorActionPreference = 'Continue'
+    az webapp create -g $ResourceGroupForDeployment -p $WebAppNameService -n $WebAppNameAdmin  --runtime dotnet:8 --output $azCliOutput
+    if ($LASTEXITCODE -ne 0) { throw "Failed to create web app $WebAppNameAdmin" }
+    $ErrorActionPreference = 'Stop'
+} else {
+    Write-Host "      Web app '$WebAppNameAdmin' already exists; reusing it." -ForegroundColor Yellow
+}
 Write-host "      ➡️ Assign Identity"
 $WebAppNameAdminId = az webapp identity assign -g $ResourceGroupForDeployment  -n $WebAppNameAdmin --identities [system] --query principalId -o tsv
 Write-host "      ➡️ Setup access to KeyVault"
 az keyvault set-policy --name $KeyVault  --object-id $WebAppNameAdminId --secret-permissions get list --key-permissions get list --resource-group $ResourceGroupForDeployment --output $azCliOutput
 Write-host "      ➡️ Set Configuration"
-az webapp config connection-string set -g $ResourceGroupForDeployment -n $WebAppNameAdmin -t PostgreSQL --output $azCliOutput --settings DefaultConnection=$DefaultConnectionKeyVault 
-az webapp config appsettings set -g $ResourceGroupForDeployment  -n $WebAppNameAdmin --output $azCliOutput --settings KnownUsers=$PublisherAdminUsers SaaSApiConfiguration__AdAuthenticationEndPoint=https://login.microsoftonline.com SaaSApiConfiguration__ClientId=$ADApplicationID SaaSApiConfiguration__ClientSecret=$ADApplicationSecretKeyVault SaaSApiConfiguration__FulFillmentAPIBaseURL=https://marketplaceapi.microsoft.com/api SaaSApiConfiguration__FulFillmentAPIVersion=2018-08-31 SaaSApiConfiguration__GrantType=client_credentials SaaSApiConfiguration__MTClientId=$ADApplicationIDAdmin SaaSApiConfiguration__IsAdminPortalMultiTenant=$IsAdminPortalMultiTenant SaaSApiConfiguration__Resource=20e940b3-4c77-4b0b-9a53-9e16a1b010a7 SaaSApiConfiguration__TenantId=$TenantID SaaSApiConfiguration__SignedOutRedirectUri=https://$WebAppNamePrefix-admin.azurewebsites.net/Home/Index/ SaaSApiConfiguration_CodeHash=$SaaSApiConfiguration_CodeHash
+az webapp config appsettings set -g $ResourceGroupForDeployment  -n $WebAppNameAdmin --output $azCliOutput --settings KnownUsers=$PublisherAdminUsers SaaSApiConfiguration__AdAuthenticationEndPoint=https://login.microsoftonline.com SaaSApiConfiguration__ClientId=$ADApplicationID SaaSApiConfiguration__FulFillmentAPIBaseURL=https://marketplaceapi.microsoft.com/api SaaSApiConfiguration__FulFillmentAPIVersion=2018-08-31 SaaSApiConfiguration__GrantType=client_credentials SaaSApiConfiguration__MTClientId=$ADApplicationIDAdmin SaaSApiConfiguration__IsAdminPortalMultiTenant=$IsAdminPortalMultiTenant SaaSApiConfiguration__Resource=20e940b3-4c77-4b0b-9a53-9e16a1b010a7 SaaSApiConfiguration__TenantId=$TenantID SaaSApiConfiguration__SignedOutRedirectUri=https://$WebAppNamePrefix-admin.azurewebsites.net/Home/Index/ SaaSApiConfiguration_CodeHash=$SaaSApiConfiguration_CodeHash
 az webapp config set -g $ResourceGroupForDeployment -n $WebAppNameAdmin --always-on true  --output $azCliOutput
 
 Write-host "   🔵 Customer Portal WebApp"
 Write-host "      ➡️ Create Web App"
-az webapp create -g $ResourceGroupForDeployment -p $WebAppNameService -n $WebAppNamePortal --runtime dotnet:8 --output $azCliOutput
+$ErrorActionPreference = 'SilentlyContinue'
+$portalAppExists = az webapp show -g $ResourceGroupForDeployment -n $WebAppNamePortal 2>$null
+$ErrorActionPreference = 'Stop'
+if (-not $portalAppExists) {
+    $ErrorActionPreference = 'Continue'
+    az webapp create -g $ResourceGroupForDeployment -p $WebAppNameService -n $WebAppNamePortal --runtime dotnet:8 --output $azCliOutput
+    if ($LASTEXITCODE -ne 0) { throw "Failed to create web app $WebAppNamePortal" }
+    $ErrorActionPreference = 'Stop'
+} else {
+    Write-Host "      Web app '$WebAppNamePortal' already exists; reusing it." -ForegroundColor Yellow
+}
 Write-host "      ➡️ Assign Identity"
 $WebAppNamePortalId= az webapp identity assign -g $ResourceGroupForDeployment  -n $WebAppNamePortal --identities [system] --query principalId -o tsv 
 Write-host "      ➡️ Setup access to KeyVault"
 az keyvault set-policy --name $KeyVault  --object-id $WebAppNamePortalId --secret-permissions get list --key-permissions get list --resource-group $ResourceGroupForDeployment --output $azCliOutput
 Write-host "      ➡️ Set Configuration"
-az webapp config connection-string set -g $ResourceGroupForDeployment -n $WebAppNamePortal -t PostgreSQL --output $azCliOutput --settings DefaultConnection=$DefaultConnectionKeyVault
-az webapp config appsettings set -g $ResourceGroupForDeployment  -n $WebAppNamePortal --output $azCliOutput --settings SaaSApiConfiguration__AdAuthenticationEndPoint=https://login.microsoftonline.com SaaSApiConfiguration__ClientId=$ADApplicationID SaaSApiConfiguration__ClientSecret=$ADApplicationSecretKeyVault SaaSApiConfiguration__FulFillmentAPIBaseURL=https://marketplaceapi.microsoft.com/api SaaSApiConfiguration__FulFillmentAPIVersion=2018-08-31 SaaSApiConfiguration__GrantType=client_credentials SaaSApiConfiguration__MTClientId=$ADMTApplicationIDPortal SaaSApiConfiguration__Resource=20e940b3-4c77-4b0b-9a53-9e16a1b010a7 SaaSApiConfiguration__TenantId=$TenantID SaaSApiConfiguration__SignedOutRedirectUri=https://$WebAppNamePrefix-portal.azurewebsites.net/Home/Index/ SaaSApiConfiguration_CodeHash=$SaaSApiConfiguration_CodeHash
+az webapp config appsettings set -g $ResourceGroupForDeployment  -n $WebAppNamePortal --output $azCliOutput --settings SaaSApiConfiguration__AdAuthenticationEndPoint=https://login.microsoftonline.com SaaSApiConfiguration__ClientId=$ADApplicationID SaaSApiConfiguration__FulFillmentAPIBaseURL=https://marketplaceapi.microsoft.com/api SaaSApiConfiguration__FulFillmentAPIVersion=2018-08-31 SaaSApiConfiguration__GrantType=client_credentials SaaSApiConfiguration__MTClientId=$ADMTApplicationIDPortal SaaSApiConfiguration__Resource=20e940b3-4c77-4b0b-9a53-9e16a1b010a7 SaaSApiConfiguration__TenantId=$TenantID SaaSApiConfiguration__SignedOutRedirectUri=https://$WebAppNamePrefix-portal.azurewebsites.net/Home/Index/ SaaSApiConfiguration_CodeHash=$SaaSApiConfiguration_CodeHash
 az webapp config set -g $ResourceGroupForDeployment -n $WebAppNamePortal --always-on true --output $azCliOutput
 
 Write-host "   🔵 Integrate WebApps with VNet (required for Key Vault + private PostgreSQL)"
 Add-WebAppVnetIntegration -ResourceGroup $ResourceGroupForDeployment -WebAppName $WebAppNamePortal -VnetName $VnetName -SubnetName $WebSubnetName -AzCliOutput $azCliOutput
 Add-WebAppVnetIntegration -ResourceGroup $ResourceGroupForDeployment -WebAppName $WebAppNameAdmin -VnetName $VnetName -SubnetName $WebSubnetName -AzCliOutput $azCliOutput
+Configure-WebAppDatabaseSettings -ResourceGroup $ResourceGroupForDeployment -WebAppName $WebAppNamePortal -ConnectionString $Connection -ClientSecret $ADApplicationSecret -AzCliOutput $azCliOutput
+Configure-WebAppDatabaseSettings -ResourceGroup $ResourceGroupForDeployment -WebAppName $WebAppNameAdmin -ConnectionString $Connection -ClientSecret $ADApplicationSecret -AzCliOutput $azCliOutput
 
 #endregion
 
@@ -625,8 +751,7 @@ Invoke-PostgresCompatibilityMigration `
     -DatabasePassword $PostgresAdminPassword
 
 Write-host "      ➡️ Execute PostgreSQL schema/data script on private VM"
-. (Join-Path $DeployScriptRoot "postgres/Invoke-PostgresMigration.ps1")
-Invoke-PostgresMigration `
+& (Join-Path $DeployScriptRoot "postgres/Invoke-PostgresMigration.ps1") `
     -ResourceGroup $ResourceGroupForDeployment `
     -VmName $SQLServerName `
     -DatabaseName $SQLDatabaseName `
@@ -638,13 +763,17 @@ Write-host "   🔵 Deploy Code to Admin Portal"
 if (-not (Test-Path $AdminZipPath)) {
     throw "Admin publish package not found: $AdminZipPath"
 }
+$ErrorActionPreference = 'Continue'
 az webapp deploy --resource-group $ResourceGroupForDeployment --name $WebAppNameAdmin --src-path $AdminZipPath --type zip --output $azCliOutput
+if ($LASTEXITCODE -ne 0) { throw "Failed to deploy Admin portal package to $WebAppNameAdmin" }
 
 Write-host "   🔵 Deploy Code to Customer Portal"
 if (-not (Test-Path $PortalZipPath)) {
     throw "Customer publish package not found: $PortalZipPath"
 }
 az webapp deploy --resource-group $ResourceGroupForDeployment --name $WebAppNamePortal --src-path $PortalZipPath --type zip --output $azCliOutput
+if ($LASTEXITCODE -ne 0) { throw "Failed to deploy Customer portal package to $WebAppNamePortal" }
+$ErrorActionPreference = 'Stop'
 
 Write-host "   🔵 Restart WebApps"
 az webapp restart -g $ResourceGroupForDeployment -n $WebAppNameAdmin --output $azCliOutput
@@ -652,7 +781,7 @@ az webapp restart -g $ResourceGroupForDeployment -n $WebAppNamePortal --output $
 
 Write-host "   🔵 Verify deployed applications"
 Test-WebAppDeploymentHealth -WebAppName $WebAppNamePortal
-Test-WebAppDeploymentHealth -WebAppName $WebAppNameAdmin
+Test-WebAppDeploymentHealth -WebAppName $WebAppNameAdmin -HealthPath "/Account/SignIn"
 
 Write-host "   🔵 Clean up"
 Remove-Item -Path $DevAppSettingsPath -ErrorAction SilentlyContinue

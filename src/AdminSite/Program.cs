@@ -1,3 +1,4 @@
+using System;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -15,6 +16,7 @@ public class Program
     /// <param name="args">The arguments.</param>
     public static void Main(string[] args)
     {
+        AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
         CreateHostBuilder(args).Build().Run();
         var loggerFactory = LoggerFactory.Create(builder =>
         {

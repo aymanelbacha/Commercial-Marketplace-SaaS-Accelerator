@@ -44,6 +44,26 @@ public class SubscriptionService
         this.currentUserId = currentUserId;
     }
 
+    private static DateTime? ToPostgresTimestamp(DateTime? value)
+    {
+        if (!value.HasValue)
+        {
+            return null;
+        }
+
+        return DateTime.SpecifyKind(value.Value, DateTimeKind.Unspecified);
+    }
+
+    private static DateTime? ToPostgresTimestamp(DateTimeOffset? value)
+    {
+        if (!value.HasValue || value.Value == default)
+        {
+            return null;
+        }
+
+        return DateTime.SpecifyKind(value.Value.UtcDateTime, DateTimeKind.Unspecified);
+    }
+
     /// <summary>
     /// Adds/Update partner subscriptions.
     /// </summary>
@@ -59,18 +79,18 @@ public class SubscriptionService
             Ampquantity = subscriptionDetail.Quantity,
             AmpsubscriptionId = subscriptionDetail.Id,
             CreateBy = this.currentUserId,
-            CreateDate = DateTime.Now,
+            CreateDate = ToPostgresTimestamp(DateTime.UtcNow),
             IsActive = isActive,
-            ModifyDate = DateTime.Now,
+            ModifyDate = ToPostgresTimestamp(DateTime.UtcNow),
             Name = subscriptionDetail.Name,
             SubscriptionStatus = Convert.ToString(subscriptionDetail.SaasSubscriptionStatus),
             UserId = customerUserId == 0 ? this.currentUserId : customerUserId,
-            PurchaserEmail = subscriptionDetail.Purchaser.EmailId,
-            PurchaserTenantId = subscriptionDetail.Purchaser.TenantId,
+            PurchaserEmail = subscriptionDetail.Purchaser?.EmailId,
+            PurchaserTenantId = subscriptionDetail.Purchaser?.TenantId,
             AmpOfferId = subscriptionDetail.OfferId,
-            Term = subscriptionDetail.Term.TermUnit.ToString(),
-            StartDate = subscriptionDetail.Term.StartDate.ToUniversalTime().DateTime,
-            EndDate = subscriptionDetail.Term.EndDate.ToUniversalTime().DateTime
+            Term = subscriptionDetail.Term?.TermUnit.ToString(),
+            StartDate = ToPostgresTimestamp(subscriptionDetail.Term?.StartDate),
+            EndDate = ToPostgresTimestamp(subscriptionDetail.Term?.EndDate)
         };
         return this.subscriptionRepository.Save(newSubscription);
     }
