@@ -1,0 +1,5 @@
+Software,Publisher,Version,Purpose
+Ubuntu,N/A,22.04,Server OS on PostgreSQL VM
+PostgreSQL,N/A,16,Database server
+ASP.NET Core,Microsoft,8.0,Customer and admin portals
+.NET,Microsoft,8.0,Application runtime

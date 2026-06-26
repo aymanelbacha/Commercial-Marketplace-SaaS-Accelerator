@@ -1,0 +1,8 @@
+Asset Name,Asset Type,Description,Manufacturer,Model
+my-new-portal,Azure Web App,Customer portal,N/A,N/A
+my-new-admin,Azure Web App,Admin portal,N/A,N/A
+my-new-asp,App Service Plan,Web app hosting,N/A,N/A
+my-new-kv,Key Vault,Secrets storage,N/A,N/A
+my-new-vnet,Virtual Network,Private network,N/A,N/A
+my-new-pgvm,Linux Virtual Machine,PostgreSQL database server,N/A,N/A
+my-new-pg-nsg,Network Security Group,Database subnet firewall,N/A,N/A
